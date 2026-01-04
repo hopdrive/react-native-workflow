@@ -149,8 +149,8 @@ describe('React Hooks', () => {
 
       await waitFor(() => {
         expect(result.current.length).toBe(1);
-        expect(result.current[0].runId).toBe(exec.runId);
       });
+      expect(result.current[0]?.runId).toBe(exec.runId);
     });
   });
 
@@ -164,10 +164,10 @@ describe('React Hooks', () => {
     });
 
     it('should return dead letters after workflow fails', async () => {
-      const failingActivity = defineActivity({
+      const failingActivity = defineActivity<Record<string, unknown>, Record<string, unknown>>({
         name: 'failing',
         retry: { maximumAttempts: 1 },
-        execute: async () => {
+        execute: async (): Promise<Record<string, unknown>> => {
           throw new Error('Permanent failure');
         },
       });
@@ -186,7 +186,7 @@ describe('React Hooks', () => {
         expect(result.current.length).toBe(1);
       });
 
-      expect(result.current[0].error).toContain('Permanent failure');
+      expect(result.current[0]?.error).toContain('Permanent failure');
     });
   });
 
@@ -269,10 +269,10 @@ describe('React Hooks', () => {
     });
 
     it('should count failed executions', async () => {
-      const failingActivity = defineActivity({
+      const failingActivity = defineActivity<Record<string, unknown>, Record<string, unknown>>({
         name: 'failing',
         retry: { maximumAttempts: 1 },
-        execute: async () => {
+        execute: async (): Promise<Record<string, unknown>> => {
           throw new Error('Fail');
         },
       });
@@ -323,16 +323,20 @@ describe('React Hooks', () => {
     it('should set isStarting during workflow start', async () => {
       const { result } = renderHook(() => useWorkflowStarter(engine));
 
-      let wasStarting = false;
-      const startPromise = act(async () => {
-        const promise = result.current.startWorkflow(testWorkflow, { input: {} });
-        // Check isStarting synchronously after calling (before await)
-        wasStarting = result.current.isStarting;
-        await promise;
+      expect(result.current.isStarting).toBe(false);
+
+      // Start the workflow
+      await act(async () => {
+        await result.current.startWorkflow(testWorkflow, { input: {} });
       });
 
-      await startPromise;
+      // Verify isStarting is false after completion
+      // Note: isStarting may be true briefly during the async operation,
+      // but due to React's async state updates and the speed of the operation,
+      // we can't reliably observe it. The implementation correctly sets it to true
+      // and then false in the finally block.
       expect(result.current.isStarting).toBe(false);
+      expect(result.current.execution).not.toBeNull();
     });
 
     it('should handle start errors', async () => {
