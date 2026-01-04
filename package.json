@@ -25,7 +25,8 @@
     "test:coverage": "vitest run --coverage",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src --ext .ts",
-    "clean": "rm -rf dist"
+    "clean": "rm -rf dist",
+    "prepare": "husky"
   },
   "keywords": [
     "react-native",
@@ -47,6 +48,7 @@
     "@types/uuid": "^9.0.8",
     "@vitest/coverage-v8": "^4.0.16",
     "better-sqlite3": "^9.4.0",
+    "husky": "^9.1.7",
     "jest": "^29.7.0",
     "jsdom": "^27.4.0",
     "react-dom": "^18.3.1",

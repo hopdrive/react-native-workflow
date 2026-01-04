@@ -6,6 +6,9 @@ A persistent, offline-first workflow orchestration system for React Native appli
 
 [![npm version](https://badge.fury.io/js/react-native-workflow.svg)](https://badge.fury.io/js/react-native-workflow)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![CI](https://github.com/hopdrive/react-native-workflow/actions/workflows/ci.yml/badge.svg)](https://github.com/hopdrive/react-native-workflow/actions/workflows/ci.yml)
+[![Coverage](https://img.shields.io/badge/coverage-84.63%25-brightgreen)](https://github.com/hopdrive/react-native-workflow)
+[![Tests](https://img.shields.io/badge/tests-266%20passed-success)](https://github.com/hopdrive/react-native-workflow)
 
 ---
 
@@ -1629,6 +1632,25 @@ export * from './activities';  // If activities need to be used elsewhere
 ---
 
 ## Testing
+
+### Test Coverage
+
+This project maintains high test coverage to ensure reliability. Coverage thresholds are enforced:
+
+- **Statements**: 80%
+- **Branches**: 70%
+- **Functions**: 80%
+- **Lines**: 80%
+
+Coverage checks run automatically:
+- **Pre-commit**: Husky hooks prevent commits that don't meet coverage thresholds
+- **CI/CD**: GitHub Actions workflows enforce coverage on all pull requests
+
+To run tests with coverage locally:
+
+```bash
+npm run test:coverage
+```
 
 ### Unit Tests
 

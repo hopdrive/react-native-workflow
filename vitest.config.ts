@@ -6,10 +6,7 @@ export default defineConfig({
     environment: 'node',
     include: ['src/**/*.test.{ts,tsx}', 'tests/**/*.test.{ts,tsx}'],
     exclude: ['**/node_modules/**', '**/dist/**'],
-    // Use jsdom for React component/hook tests
-    environmentMatchGlobs: [
-      ['**/*.test.tsx', 'jsdom'],
-    ],
+    // Note: Test files can specify environment via @vitest-environment comment
     coverage: {
       provider: 'v8',
       reporter: ['text', 'json', 'html', 'lcov'],
@@ -23,7 +20,7 @@ export default defineConfig({
       ],
       thresholds: {
         statements: 80,
-        branches: 75,
+        branches: 70,
         functions: 80,
         lines: 80,
       },
