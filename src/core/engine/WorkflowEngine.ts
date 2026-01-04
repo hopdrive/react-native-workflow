@@ -52,6 +52,9 @@ export class WorkflowEngine {
   private isRunning = false;
   private abortController: AbortController | null = null;
 
+  // Track active AbortControllers by runId for cancellation propagation
+  private activeAbortControllers: Map<string, { abort: (reason?: unknown) => void }> = new Map();
+
   private constructor(config: WorkflowEngineConfig) {
     this.storage = config.storage;
     this.clock = config.clock;
@@ -284,10 +287,16 @@ export class WorkflowEngine {
       return;
     }
 
+    // 1. Abort any in-flight activity
+    const controller = this.activeAbortControllers.get(runId);
+    if (controller) {
+      controller.abort(new Error('Workflow cancelled'));
+    }
+
     const now = this.clock.now();
     const workflow = this.workflows.get(execution.workflowName);
 
-    // Update execution status
+    // 2. Update execution status
     const updatedExecution: WorkflowExecution = {
       ...execution,
       status: 'cancelled',
@@ -296,15 +305,15 @@ export class WorkflowEngine {
     };
     await this.storage.saveExecution(updatedExecution);
 
-    // Delete pending tasks for this execution
+    // 3. Delete pending tasks for this execution
     await this.storage.deleteActivityTasksForExecution(runId);
 
-    // Release uniqueness constraint
+    // 4. Release uniqueness constraint
     if (execution.uniqueKey) {
       await this.storage.deleteUniqueKey(execution.workflowName, execution.uniqueKey);
     }
 
-    // Invoke callback
+    // 5. Invoke callback
     if (workflow?.onCancelled) {
       try {
         await workflow.onCancelled(runId, execution.state);
@@ -462,6 +471,9 @@ export class WorkflowEngine {
     const { signal, abort } = createAbortController();
     let timeoutHandle: unknown = null;
 
+    // Register the controller for this execution (for cancellation propagation)
+    this.activeAbortControllers.set(task.runId, { abort });
+
     if (task.timeout > 0) {
       timeoutHandle = this.scheduler.setTimeout(() => {
         abort(new ActivityTimeoutError(task.taskId, task.timeout));
@@ -503,6 +515,9 @@ export class WorkflowEngine {
 
       // Handle failure
       await this.handleTaskFailure(task, activity, error);
+    } finally {
+      // Always clean up the controller reference
+      this.activeAbortControllers.delete(task.runId);
     }
   }
 
