@@ -48,12 +48,17 @@ export async function createTestEngine(
 export async function runUntilComplete(
   engine: WorkflowEngine,
   runId: string,
-  options?: { timeout?: number; tickInterval?: number }
+  options?: { timeout?: number; tickInterval?: number; clock?: MockClock }
 ): Promise<WorkflowExecution> {
-  const { timeout = 5000, tickInterval = 10 } = options ?? {};
+  const { timeout = 5000, tickInterval = 10, clock } = options ?? {};
   const start = Date.now();
 
   while (Date.now() - start < timeout) {
+    // Advance mock clock if provided (for gated activities)
+    if (clock) {
+      clock.advance(35000); // Advance past default 30s gating delay
+    }
+
     await engine.tick();
     const execution = await engine.getExecution(runId);
 
