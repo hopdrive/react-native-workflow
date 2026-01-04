@@ -52,7 +52,7 @@ export function useExecution(
     }
 
     // Initial fetch
-    engine.getExecution(runId).then(setExecution);
+    void engine.getExecution(runId).then(setExecution);
 
     // Subscribe to changes
     // Note: This uses polling since the engine doesn't have built-in subscriptions
@@ -95,8 +95,10 @@ export function useExecutionsByStatus(
       setExecutions(result);
     };
 
-    refresh();
-    const interval = setInterval(refresh, refreshInterval);
+    void refresh();
+    const interval = setInterval(() => {
+      void refresh();
+    }, refreshInterval);
 
     return () => clearInterval(interval);
   }, [engine, status, refreshInterval]);
@@ -127,8 +129,10 @@ export function useDeadLetters(
       setDeadLetters(result);
     };
 
-    refresh();
-    const interval = setInterval(refresh, refreshInterval);
+    void refresh();
+    const interval = setInterval(() => {
+      void refresh();
+    }, refreshInterval);
 
     return () => clearInterval(interval);
   }, [engine, unacknowledgedOnly, refreshInterval]);
@@ -155,8 +159,10 @@ export function usePendingActivityCount(
       setCount(tasks.length);
     };
 
-    refresh();
-    const interval = setInterval(refresh, refreshInterval);
+    void refresh();
+    const interval = setInterval(() => {
+      void refresh();
+    }, refreshInterval);
 
     return () => clearInterval(interval);
   }, [storage, refreshInterval]);
@@ -212,8 +218,10 @@ export function useExecutionStats(
       });
     };
 
-    refresh();
-    const interval = setInterval(refresh, refreshInterval);
+    void refresh();
+    const interval = setInterval(() => {
+      void refresh();
+    }, refreshInterval);
 
     return () => clearInterval(interval);
   }, [engine, refreshInterval]);
@@ -297,7 +305,7 @@ export function useEngineRunner(
       }
     };
 
-    runLoop();
+    void runLoop();
 
     return () => {
       isRunningRef.current = false;

@@ -98,7 +98,7 @@ describe('WorkflowEngine - Cancellation Propagation', () => {
     });
 
     it('should set signal.aborted to true when cancelled', async () => {
-      let signalState = { aborted: false };
+      const signalState = { aborted: false };
 
       const slowActivity = defineActivity({
         name: 'checkSignal',

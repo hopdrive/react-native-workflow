@@ -14,7 +14,6 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { WorkflowEngine } from '../../src/core/engine';
 import { defineActivity, defineWorkflow } from '../../src/core/definitions';
 import { createTestContext, TestContext } from '../utils/testHelpers';
 
@@ -488,7 +487,7 @@ describe('Background Processing Integration', () => {
         },
       });
 
-      const execution = await eventCtx.engine.start(workflow, { input: {} });
+      await eventCtx.engine.start(workflow, { input: {} });
       await eventCtx.engine.tick();
 
       eventCtx.engine.stop();

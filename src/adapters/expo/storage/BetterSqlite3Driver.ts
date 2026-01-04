@@ -33,7 +33,6 @@ export class BetterSqlite3Driver implements SQLiteDriver {
    */
   static async create(databasePath: string = ':memory:'): Promise<BetterSqlite3Driver> {
     // Dynamic import to avoid requiring better-sqlite3 at compile time
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
     const Database = require('better-sqlite3');
     const db = new Database(databasePath);
     return new BetterSqlite3Driver(db);

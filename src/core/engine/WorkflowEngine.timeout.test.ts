@@ -82,7 +82,7 @@ describe('WorkflowEngine - Activity Timeout Handling', () => {
     });
 
     it('should set signal.aborted to true when timeout fires', async () => {
-      let signalState = { aborted: false, reason: null as unknown };
+      const signalState = { aborted: false, reason: null as unknown };
 
       const activity = defineActivity({
         name: 'checkSignal',

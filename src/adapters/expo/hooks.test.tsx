@@ -393,7 +393,6 @@ describe('React Hooks', () => {
       });
 
       expect(returnedExecution).toBeDefined();
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       expect((returnedExecution as any).workflowName).toBe('test');
     });
   });

@@ -121,7 +121,7 @@ describe('Crash Recovery Integration', () => {
       expect(activityExecutions[0].name).toBe('step1');
 
       // Verify first activity completed
-      let state = await engine.getExecution(execution.runId);
+      const state = await engine.getExecution(execution.runId);
       expect(state?.state.step1).toBe('done');
 
       // Simulate crash/restart
@@ -217,7 +217,7 @@ describe('Crash Recovery Integration', () => {
       await engine.tick(); // step1
       await engine.tick(); // gatedStep skipped
 
-      let state = await engine.getExecution(execution.runId);
+      const state = await engine.getExecution(execution.runId);
       expect(state?.currentActivityName).toBe('gatedStep');
 
       // Crash while gated

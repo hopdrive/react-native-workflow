@@ -69,7 +69,7 @@ export class SQLiteStorage implements Storage {
     return {
       runId: row['run_id'] as string,
       workflowName: row['workflow_name'] as string,
-      uniqueKey: row['unique_key'] != null ? String(row['unique_key']) : undefined,
+      uniqueKey: row['unique_key'] != null ? String(row['unique_key'] as string | number) : undefined,
       currentActivityIndex: row['current_activity_index'] as number,
       currentActivityName: row['current_activity_name'] as string,
       status: row['status'] as WorkflowExecutionStatus,
@@ -78,8 +78,8 @@ export class SQLiteStorage implements Storage {
       createdAt: row['created_at'] as number,
       updatedAt: row['updated_at'] as number,
       completedAt: row['completed_at'] != null ? Number(row['completed_at']) : undefined,
-      error: row['error'] != null ? String(row['error']) : undefined,
-      failedActivityName: row['failed_activity_name'] != null ? String(row['failed_activity_name']) : undefined,
+      error: row['error'] != null ? String(row['error'] as string) : undefined,
+      failedActivityName: row['failed_activity_name'] != null ? String(row['failed_activity_name'] as string) : undefined,
     };
   }
 
@@ -100,8 +100,8 @@ export class SQLiteStorage implements Storage {
       startedAt: row['started_at'] != null ? Number(row['started_at']) : undefined,
       lastAttemptAt: row['last_attempt_at'] != null ? Number(row['last_attempt_at']) : undefined,
       completedAt: row['completed_at'] != null ? Number(row['completed_at']) : undefined,
-      error: row['error'] != null ? String(row['error']) : undefined,
-      errorStack: row['error_stack'] != null ? String(row['error_stack']) : undefined,
+      error: row['error'] != null ? String(row['error'] as string) : undefined,
+      errorStack: row['error_stack'] != null ? String(row['error_stack'] as string) : undefined,
     };
   }
 
@@ -114,7 +114,7 @@ export class SQLiteStorage implements Storage {
       workflowName: row['workflow_name'] as string,
       input: JSON.parse(row['input'] as string),
       error: row['error'] as string,
-      errorStack: row['error_stack'] != null ? String(row['error_stack']) : undefined,
+      errorStack: row['error_stack'] != null ? String(row['error_stack'] as string) : undefined,
       attempts: row['attempts'] as number,
       failedAt: row['failed_at'] as number,
       acknowledged: (row['acknowledged'] as number) === 1,
