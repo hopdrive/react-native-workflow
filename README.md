@@ -1,3 +1,5 @@
+![React Native Workflow Engine](./logo.png)
+
 # React Native Workflow Engine
 
 **A "Temporal-lite" for Mobile**
