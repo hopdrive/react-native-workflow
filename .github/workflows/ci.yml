@@ -13,7 +13,7 @@ jobs:
 
     strategy:
       matrix:
-        node-version: [18.x, 20.x]
+        node-version: [20.x]
 
     steps:
       - name: Checkout code
@@ -39,14 +39,13 @@ jobs:
 
       - name: Upload coverage to artifacts
         uses: actions/upload-artifact@v4
-        if: matrix.node-version == '20.x'
         with:
           name: coverage-report
           path: coverage/
           retention-days: 7
 
       - name: Coverage check (PR only)
-        if: github.event_name == 'pull_request' && matrix.node-version == '20.x'
+        if: github.event_name == 'pull_request'
         run: |
           echo "## Coverage Report" >> $GITHUB_STEP_SUMMARY
           echo "Coverage thresholds must be met for PR to be merged." >> $GITHUB_STEP_SUMMARY
