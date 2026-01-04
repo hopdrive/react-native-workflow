@@ -1,0 +1,8 @@
+# Run type checking
+npm run typecheck
+
+# Run linting
+npm run lint
+
+# Run tests with coverage (will fail if thresholds not met)
+npm run test:coverage
