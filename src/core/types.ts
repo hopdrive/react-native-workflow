@@ -234,6 +234,13 @@ export interface Activity<TInput = Record<string, unknown>, TOutput = Record<str
   options?: ActivityOptions<TInput, TOutput>;
 }
 
+/**
+ * Type alias for Activity with any generic parameters.
+ * Used when storing activities in arrays where the specific types don't matter.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type AnyActivity = Activity<any, any>;
+
 // ============================================================================
 // Workflow Definition Types
 // ============================================================================
@@ -253,7 +260,7 @@ export interface WorkflowCallbacks {
  */
 export interface Workflow<TInput = Record<string, unknown>> extends WorkflowCallbacks {
   name: string;
-  activities: Activity[];
+  activities: AnyActivity[];
   /** @internal Type brand for input type inference */
   readonly _inputType?: TInput;
 }

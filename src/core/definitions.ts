@@ -2,7 +2,7 @@
  * Helper functions for defining workflows and activities.
  */
 
-import { Activity, ActivityOptions, Workflow, WorkflowCallbacks, ActivityContext } from './types';
+import { Activity, AnyActivity, ActivityOptions, Workflow, WorkflowCallbacks, ActivityContext } from './types';
 
 /**
  * Options for defineActivity.
@@ -35,7 +35,7 @@ export function defineActivity<
  */
 export interface DefineWorkflowOptions<TInput = Record<string, unknown>> extends WorkflowCallbacks {
   name: string;
-  activities: Activity[];
+  activities: AnyActivity[];
   /** @internal Type brand for input type inference */
   readonly _inputType?: TInput;
 }

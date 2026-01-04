@@ -23,6 +23,7 @@ export {
   ActivityCallbacks,
   ActivityOptions,
   Activity,
+  AnyActivity,
 
   // Workflow types
   WorkflowCallbacks,
@@ -59,6 +60,9 @@ export { conditions, always, whenConnected, whenDisconnected, afterDelay, all, a
 
 // Storage
 export { InMemoryStorage } from './storage';
+
+// Engine
+export { WorkflowEngine } from './engine';
 
 // Mocks
 export {
