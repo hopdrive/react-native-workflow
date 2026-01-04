@@ -4,8 +4,12 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'node',
-    include: ['src/**/*.test.ts', 'tests/**/*.test.ts'],
+    include: ['src/**/*.test.{ts,tsx}', 'tests/**/*.test.{ts,tsx}'],
     exclude: ['**/node_modules/**', '**/dist/**'],
+    // Use jsdom for React component/hook tests
+    environmentMatchGlobs: [
+      ['**/*.test.tsx', 'jsdom'],
+    ],
     coverage: {
       provider: 'v8',
       reporter: ['text', 'json', 'html', 'lcov'],
