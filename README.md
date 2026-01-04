@@ -1652,69 +1652,160 @@ To run tests with coverage locally:
 npm run test:coverage
 ```
 
+### Test Structure
+
+The test suite is organized into:
+
+- **Unit Tests** (`src/**/*.test.ts`): Core engine functionality, storage adapters, and React hooks
+- **Integration Tests** (`tests/integration/**/*.test.ts`): End-to-end workflow scenarios
+
 ### Unit Tests
 
-The library includes comprehensive unit tests for core functionality:
+The library includes comprehensive unit tests for core functionality. Unit tests manually create engine instances with mocked dependencies:
 
 ```typescript
+import { WorkflowEngine } from './WorkflowEngine';
+import { InMemoryStorage } from '../storage';
+import { MockClock, MockScheduler, MockEnvironment } from '../mocks';
+import { defineActivity, defineWorkflow } from '../definitions';
+
 describe('WorkflowEngine', () => {
+  let storage: InMemoryStorage;
+  let clock: MockClock;
+  let scheduler: MockScheduler;
+  let environment: MockEnvironment;
+
+  beforeEach(() => {
+    storage = new InMemoryStorage();
+    clock = new MockClock(1000000);
+    scheduler = new MockScheduler(clock);
+    environment = new MockEnvironment();
+  });
+
+  async function createEngine(): Promise<WorkflowEngine> {
+    return WorkflowEngine.create({
+      storage,
+      clock,
+      scheduler,
+      environment,
+    });
+  }
+
   it('should execute activities in sequence', async () => {
+    const engine = await createEngine();
+
+    const activityA = defineActivity({
+      name: 'activityA',
+      execute: async () => ({ a: true }),
+    });
+    const activityB = defineActivity({
+      name: 'activityB',
+      execute: async () => ({ b: true }),
+    });
+    const activityC = defineActivity({
+      name: 'activityC',
+      execute: async () => ({ c: true }),
+    });
+
     const workflow = defineWorkflow({
       name: 'test',
       activities: [activityA, activityB, activityC],
     });
 
+    engine.registerWorkflow(workflow);
     const execution = await engine.start(workflow, { input: { value: 1 } });
-    await waitForCompletion(execution.runId);
 
-    const result = await engine.getExecution(execution.runId);
-    expect(result.status).toBe('completed');
-    expect(result.state).toEqual({ value: 1, a: true, b: true, c: true });
+    // Process until complete
+    while (true) {
+      await engine.tick();
+      const result = await engine.getExecution(execution.runId);
+      if (result?.status !== 'running') {
+        expect(result?.status).toBe('completed');
+        expect(result?.state).toEqual({ value: 1, a: true, b: true, c: true });
+        break;
+      }
+    }
   });
 });
 ```
 
 ### Integration Tests
 
-Test complete workflow scenarios:
+Integration tests verify complete workflow scenarios including offline handling, crash recovery, and concurrent execution. Integration tests use `createTestContext()` and `runToCompletion()` helpers:
 
 ```typescript
-describe('Photo Pipeline Integration', () => {
-  it('should upload photo when connected', async () => {
-    // Setup
-    mockNetworkState(true);
+import { createTestContext, runToCompletion, TestContext } from '../utils/testHelpers';
 
-    // Execute
-    const execution = await engine.start(photoWorkflow, {
+describe('Photo Pipeline Integration', () => {
+  let ctx: TestContext;
+
+  beforeEach(async () => {
+    ctx = await createTestContext();
+  });
+
+  afterEach(() => {
+    ctx.engine.stop();
+  });
+
+  it('should upload photo when connected', async () => {
+    const execution = await ctx.engine.start(photoWorkflow, {
       input: { uri: 'file://test.jpg', moveId: 123 },
     });
 
-    // Wait and verify
-    await waitForCompletion(execution.runId);
-    expect(mockUploadApi).toHaveBeenCalled();
-    expect(mockNotifyApi).toHaveBeenCalledWith({ moveId: 123, s3Key: expect.any(String) });
+    const result = await runToCompletion(ctx, execution.runId);
+    expect(result.status).toBe('completed');
+    expect(result.state.s3Key).toBeDefined();
   });
 
   it('should defer upload when offline', async () => {
-    mockNetworkState(false);
+    ctx.environment.setConnected(false);
 
-    const execution = await engine.start(photoWorkflow, {
+    const execution = await ctx.engine.start(photoWorkflow, {
       input: { uri: 'file://test.jpg', moveId: 123 },
     });
 
-    // First activity completes, upload is pending
-    await advanceTimers(1000);
-    const state = await engine.getExecution(execution.runId);
+    await ctx.engine.tick(); // First activity completes
+    await ctx.engine.tick(); // Upload skipped (offline)
+
+    const state = await ctx.engine.getExecution(execution.runId);
     expect(state.currentActivityName).toBe('uploadPhoto');
     expect(state.status).toBe('running');
 
     // Come back online
-    mockNetworkState(true);
-    await advanceTimers(1000);
+    ctx.environment.setConnected(true);
+    await ctx.engine.tick();
 
-    // Now completes
-    await waitForCompletion(execution.runId);
-    expect(mockUploadApi).toHaveBeenCalled();
+    const result = await runToCompletion(ctx, execution.runId);
+    expect(result.status).toBe('completed');
+  });
+});
+```
+
+### Test Utilities
+
+The `tests/utils/testHelpers.ts` module provides utilities for consistent test setup:
+
+- `createTestContext()` - Creates a test engine with mocked dependencies
+- `runToCompletion()` - Runs engine until workflow completes
+- `createTestActivity()` - Creates configurable test activities
+- `sleep()` / `waitFor()` - Async utilities
+
+### React Hooks Tests
+
+React hooks are tested using `@testing-library/react-hooks`:
+
+```typescript
+import { renderHook, waitFor } from '@testing-library/react-hooks';
+import { useExecution } from 'react-native-workflow/expo';
+
+describe('useExecution', () => {
+  it('should return execution data', async () => {
+    const execution = await engine.start(workflow, { input: {} });
+    const { result } = renderHook(() => useExecution(engine, execution.runId));
+
+    await waitFor(() => {
+      expect(result.current?.runId).toBe(execution.runId);
+    });
   });
 });
 ```
@@ -1904,6 +1995,30 @@ defineActivity({
 ```
 
 Current activities are mostly I/O-bound where async concurrency is sufficient.
+
+### Example App & E2E Testing
+
+**Future work**: An example Expo app demonstrating library capabilities is planned. This would include:
+
+- **Example App Structure**: A complete Expo app showcasing:
+  - Photo workflow (capture → upload → notify)
+  - Multi-workflow scenarios
+  - Dead letter queue viewer
+  - Network simulation controls
+  - Workflow progress visualization
+
+- **E2E Tests**: Maestro-based end-to-end tests for:
+  - Complete workflow execution
+  - Offline/online transitions
+  - Background processing scenarios
+
+- **Manual Testing Guide**: Scenarios for testing:
+  - App crash recovery
+  - Device reboot persistence
+  - Real background fetch behavior (iOS/Android)
+  - Memory pressure handling
+
+This would serve as both documentation and a reference implementation for library users.
 
 ---
 
