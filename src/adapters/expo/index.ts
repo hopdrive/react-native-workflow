@@ -1,13 +1,74 @@
 /**
- * Expo adapter for the workflow engine.
- * Provides Expo-specific implementations and easy integration.
+ * Expo adapter for react-native-workflow.
+ *
+ * This module provides Expo-specific implementations for:
+ * - SQLite storage (using expo-sqlite)
+ * - Runtime adapters (clock, scheduler, environment)
+ * - Background task integration (using expo-task-manager)
+ * - React hooks for UI integration
+ *
+ * @example
+ * ```typescript
+ * import { ExpoWorkflowClient } from 'react-native-workflow/expo';
+ * import { openDatabaseAsync } from 'expo-sqlite';
+ *
+ * const client = await ExpoWorkflowClient.create({
+ *   openDatabase: openDatabaseAsync,
+ * });
+ *
+ * client.registerWorkflow(myWorkflow);
+ * await client.start();
+ * ```
  */
 
-// Types
-export { ExpoEngineOptions, BackgroundFetchResult } from './types';
+// Main client
+export { ExpoWorkflowClient, ExpoWorkflowClientOptions } from './ExpoWorkflowClient';
 
-// Note: Actual implementations will be added in later phases:
-// - ExpoSQLiteStorage (Phase 6)
-// - ExpoEnvironment (Phase 7)
-// - createExpoEngine (Phase 7)
-// - Background fetch integration (Phase 7)
+// Storage
+export {
+  SQLiteStorage,
+  SQLiteDriver,
+  SQLiteRow,
+  SQLiteResult,
+  SQLiteDriverFactory,
+  ExpoSqliteDriver,
+  ExpoSQLiteFactory,
+  getSchemaStatements,
+  SCHEMA_VERSION,
+  // Test utilities
+  BetterSqlite3Driver,
+  createBetterSqlite3Driver,
+} from './storage';
+
+// Runtime
+export {
+  ExpoClock,
+  ExpoScheduler,
+  ExpoEnvironment,
+  ExpoEnvironmentOptions,
+  NetworkStateProvider,
+  BatteryLevelProvider,
+} from './runtime';
+
+// Background
+export {
+  WORKFLOW_BACKGROUND_TASK,
+  BackgroundFetchResult,
+  BackgroundTaskOptions,
+  RegisterBackgroundTaskOptions,
+  runBackgroundWorkflowTask,
+  registerBackgroundTask,
+  unregisterBackgroundTask,
+} from './background';
+
+// Hooks
+export {
+  useExecution,
+  useExecutionsByStatus,
+  useDeadLetters,
+  usePendingActivityCount,
+  useExecutionStats,
+  useWorkflowStarter,
+  useEngineRunner,
+  ExecutionStats,
+} from './hooks';
