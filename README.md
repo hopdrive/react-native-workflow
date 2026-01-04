@@ -6,7 +6,7 @@ A persistent, offline-first workflow orchestration system for React Native appli
 
 [![npm version](https://badge.fury.io/js/react-native-workflow.svg)](https://badge.fury.io/js/react-native-workflow)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![CI](https://github.com/hopdrive/react-native-workflow/actions/workflows/ci.yml/badge.svg)](https://github.com/hopdrive/react-native-workflow/actions/workflows/ci.yml)
+[![CI](https://img.shields.io/github/actions/workflow/status/hopdrive/react-native-workflow/ci.yml?branch=master&label=CI)](https://github.com/hopdrive/react-native-workflow/actions/workflows/ci.yml)
 [![Coverage](https://img.shields.io/badge/coverage-84.63%25-brightgreen)](https://github.com/hopdrive/react-native-workflow)
 [![Tests](https://img.shields.io/badge/tests-266%20passed-success)](https://github.com/hopdrive/react-native-workflow)
 
