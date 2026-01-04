@@ -41,9 +41,9 @@ A persistent, offline-first workflow orchestration system for React Native appli
 ### Installation
 
 ```bash
-npm install react-native-workflow react-native-mmkv
+npm install react-native-workflow expo-sqlite
 # or
-yarn add react-native-workflow react-native-mmkv
+yarn add react-native-workflow expo-sqlite
 ```
 
 ### Define an Activity
@@ -56,7 +56,9 @@ import { defineActivity, conditions } from 'react-native-workflow';
 
 export const uploadPhoto = defineActivity({
   name: 'uploadPhoto',
-
+  runWhen: conditions.whenConnected,  // Only run when online
+  retry: { maximumAttempts: 5 },
+  startToCloseTimeout: 60000,
   execute: async (ctx) => {
     const { uri } = ctx.input;
     const response = await fetch('https://api.example.com/upload', {
@@ -65,12 +67,6 @@ export const uploadPhoto = defineActivity({
       signal: ctx.signal, // Supports cancellation
     });
     return { s3Key: response.key };
-  },
-
-  options: {
-    startToCloseTimeout: 60000,
-    retry: { maximumAttempts: 5 },
-    runWhen: conditions.whenConnected,
   },
 });
 ```
@@ -98,21 +94,26 @@ export const photoWorkflow = defineWorkflow({
 
 ```typescript
 // App.tsx
-import { WorkflowEngine, MMKVStorageAdapter } from 'react-native-workflow';
+import { ExpoWorkflowClient } from 'react-native-workflow/expo';
+import { openDatabaseAsync } from 'expo-sqlite';
+import NetInfo from '@react-native-community/netinfo';
 import { photoWorkflow } from './workflows/photo';
 
-const engine = await WorkflowEngine.create({
-  storage: new MMKVStorageAdapter(),
-  runtimeContext: () => ({
-    isConnected: NetInfo.isConnected(),
-  }),
+const client = await ExpoWorkflowClient.create({
+  openDatabase: openDatabaseAsync,
+  environment: {
+    getNetworkState: async () => {
+      const state = await NetInfo.fetch();
+      return state.isConnected ?? false;
+    },
+  },
 });
 
-engine.registerWorkflow(photoWorkflow);
-engine.start();
+client.registerWorkflow(photoWorkflow);
+await client.start();
 
 // Start a workflow
-const execution = await engine.start(photoWorkflow, {
+const execution = await client.engine.start(photoWorkflow, {
   input: { moveId: 123, uri: 'file://photo.jpg' },
 });
 console.log('Started workflow:', execution.runId);
@@ -149,7 +150,7 @@ Mobile applications operating in unreliable network conditions need a way to:
 3. **Simple mental model**: Familiar patterns from industry-standard workflow engines
 4. **React-friendly**: First-class hooks for UI integration
 5. **Minimal footprint**: Lightweight enough for mobile constraints
-6. **Storage-agnostic**: Pluggable persistence layer (MMKV, SQLite, Realm)
+6. **Storage-agnostic**: Pluggable persistence layer (SQLite for production, InMemory for testing)
 
 ---
 
@@ -208,7 +209,7 @@ This worked well but had problems:
 
 We needed to:
 
-1. **Migrate from Realm to MMKV** — Realm's future is uncertain; MMKV is simpler and actively maintained.
+1. **Migrate from Realm to SQLite** — Realm's future is uncertain; SQLite is well-supported and provides ACID transactions for crash safety.
 
 2. **Align with industry standards** — Temporal is the gold standard for workflow orchestration. Borrowing its terminology and patterns means developers can transfer knowledge.
 
@@ -457,16 +458,13 @@ interface Activity<TInput = any, TOutput = any> {
 const uploadPhoto = defineActivity({
   name: 'uploadPhoto',
 
+  startToCloseTimeout: 60000,
+  retry: { maximumAttempts: 10 },
+  runWhen: conditions.whenConnected,
   execute: async (ctx) => {
     const { uri, hash } = ctx.input;
     const response = await uploadToS3(uri, { signal: ctx.signal });
     return { s3Key: response.key, uploadedAt: Date.now() };
-  },
-
-  options: {
-    startToCloseTimeout: 60000,
-    retry: { maximumAttempts: 10 },
-    runWhen: conditions.whenConnected,
   },
 });
 ```
@@ -513,27 +511,53 @@ interface ActivityTask {
 
 ## API Reference
 
-### WorkflowEngine
+### ExpoWorkflowClient (Recommended for Expo Apps)
 
-The main orchestrator for workflow execution:
+The main entry point for Expo applications:
 
 ```typescript
-import { WorkflowEngine, MMKVStorageAdapter } from 'react-native-workflow';
+import { ExpoWorkflowClient } from 'react-native-workflow/expo';
+import { openDatabaseAsync } from 'expo-sqlite';
+import NetInfo from '@react-native-community/netinfo';
+
+// Initialize the client
+const client = await ExpoWorkflowClient.create({
+  openDatabase: openDatabaseAsync,
+  databaseName: 'workflow.db', // optional, defaults to 'workflow.db'
+
+  environment: {
+    getNetworkState: async () => {
+      const state = await NetInfo.fetch();
+      return state.isConnected ?? false;
+    },
+    // Optional: getBatteryLevel for battery-aware workflows
+  },
+
+  // Optional event handlers
+  onEvent: (event) => {
+    console.log('Workflow event:', event.type);
+  },
+});
+```
+
+### WorkflowEngine (Advanced Usage)
+
+For non-Expo apps or custom configurations, you can use the engine directly:
+
+```typescript
+import { WorkflowEngine } from 'react-native-workflow';
+import { SQLiteStorage, ExpoSqliteDriver } from 'react-native-workflow/expo';
+import { openDatabaseAsync } from 'expo-sqlite';
+
+// Create SQLite storage
+const driver = await ExpoSqliteDriver.create('workflow.db', openDatabaseAsync);
+const storage = new SQLiteStorage(driver);
+await storage.initialize();
 
 // Initialize the engine
 const engine = await WorkflowEngine.create({
-  storage: new MMKVStorageAdapter(),
-
-  // Runtime context provider (called for each activity)
-  runtimeContext: () => ({
-    isConnected: getNetworkState(),
-    batteryLevel: getBatteryLevel(),
-    // Add app-specific context values
-  }),
-
-  // Optional event handlers
-  onExecutionStateChanged: (execution) => { /* ... */ },
-  onActivityTaskStateChanged: (task) => { /* ... */ },
+  storage,
+  // ... other options
 });
 
 // Register workflows (typically at app startup)
@@ -573,12 +597,11 @@ const running = await engine.getExecutionsByStatus('running');
 
 // Control execution
 await engine.cancelExecution(runId);
-await engine.retryExecution(runId);  // Retry from failed activity
 
-// Engine control
-engine.start();                      // Begin processing activities
-engine.start({ lifespan: 25000 });   // Process for max 25 seconds (background mode)
-engine.stop();                       // Pause processing
+// Engine control (start processing loop)
+await client.start();                      // Begin processing activities (ExpoWorkflowClient)
+await client.start({ lifespan: 25000 });   // Process for max 25 seconds (background mode)
+engine.stop();                             // Pause processing (works on both client.engine and engine)
 
 // Dead letter queue
 const deadLetters = await engine.getDeadLetters();
@@ -628,30 +651,27 @@ import { defineActivity } from 'react-native-workflow';
 
 export const uploadPhoto = defineActivity<UploadInput, UploadOutput>({
   name: 'uploadPhoto',
+  startToCloseTimeout: 60000,
+  retry: {
+    maximumAttempts: 10,
+    initialInterval: 5000,
+    backoffCoefficient: 2,
+    maximumInterval: 60000,
+  },
+  priority: 50,
+  runWhen: conditions.whenConnected,
+
+  // Lifecycle callbacks
+  onStart: async (taskId, input) => { },
+  onSuccess: async (taskId, input, result) => { },
+  onFailure: async (taskId, input, error, attempt) => { },
+  onFailed: async (taskId, input, error) => { },
+  onSkipped: async (taskId, input, reason) => { },
 
   execute: async (ctx) => {
     const { uri, hash } = ctx.input;
     const response = await uploadToS3(uri, { signal: ctx.signal });
     return { s3Key: response.key, uploadedAt: Date.now() };
-  },
-
-  options: {
-    startToCloseTimeout: 60000,
-    retry: {
-      maximumAttempts: 10,
-      initialInterval: 5000,
-      backoffCoefficient: 2,
-      maximumInterval: 60000,
-    },
-    priority: 50,
-    runWhen: conditions.whenConnected,
-
-    // Lifecycle callbacks
-    onStart: async (taskId, input) => { },
-    onSuccess: async (taskId, input, result) => { },
-    onFailure: async (taskId, input, error, attempt) => { },
-    onFailed: async (taskId, input, error) => { },
-    onSkipped: async (taskId, input, reason) => { },
   },
 });
 
@@ -759,17 +779,15 @@ conditions.not(cond)                // Inverts a condition
 ```typescript
 defineActivity({
   name: 'syncToServer',
-  execute: async (ctx) => { /* ... */ },
-  options: {
-    startToCloseTimeout: 30000,
-    retry: {
-      maximumAttempts: 10,
-      initialInterval: 5000,
-      backoffCoefficient: 2,
-      maximumInterval: 60000,
-    },
-    runWhen: conditions.whenConnected,
+  startToCloseTimeout: 30000,
+  retry: {
+    maximumAttempts: 10,
+    initialInterval: 5000,
+    backoffCoefficient: 2,
+    maximumInterval: 60000,
   },
+  runWhen: conditions.whenConnected,
+  execute: async (ctx) => { /* ... */ },
 });
 ```
 
@@ -778,10 +796,8 @@ defineActivity({
 ```typescript
 defineActivity({
   name: 'delayedCleanup',
+  runWhen: conditions.afterDelay(30000),  // Wait 30 seconds
   execute: async (ctx) => { /* ... */ },
-  options: {
-    runWhen: conditions.afterDelay(30000),  // Wait 30 seconds
-  },
 });
 ```
 
@@ -790,30 +806,30 @@ defineActivity({
 ```typescript
 defineActivity({
   name: 'batteryAwareSync',
-  execute: async (ctx) => { /* ... */ },
-  options: {
-    runWhen: (ctx) => {
-      if (!ctx.isConnected) {
-        return { ready: false, reason: 'No network' };
-      }
-      if (ctx.batteryLevel < 0.2 && !ctx.input.urgent) {
-        return { ready: false, reason: 'Battery low, deferring non-urgent work' };
-      }
-      return { ready: true };
-    },
+  runWhen: (ctx) => {
+    if (!ctx.isConnected) {
+      return { ready: false, reason: 'No network' };
+    }
+    if (ctx.batteryLevel < 0.2 && !ctx.input.urgent) {
+      return { ready: false, reason: 'Battery low, deferring non-urgent work' };
+    }
+    return { ready: true };
   },
+  execute: async (ctx) => { /* ... */ },
 });
 ```
 
 **Combined Conditions:**
 
 ```typescript
-options: {
+defineActivity({
+  name: 'delayedSync',
   runWhen: conditions.all(
     conditions.whenConnected,
     conditions.afterDelay(5000)
   ),
-}
+  execute: async (ctx) => { /* ... */ },
+});
 ```
 
 ---
@@ -1087,14 +1103,16 @@ await engine.purgeDeadLetters({
 Configure automatic cleanup when creating the engine:
 
 ```typescript
+// Cleanup is handled automatically via CleanupConfig when creating the engine:
 const engine = await WorkflowEngine.create({
-  storage: new MMKVStorageAdapter(),
-
+  storage,
+  clock,
+  scheduler,
+  environment,
   cleanup: {
     onStart: true,  // Run cleanup on engine start
     completedExecutionRetention: 24 * 60 * 60 * 1000,    // 24 hours
     deadLetterRetention: 7 * 24 * 60 * 60 * 1000,        // 7 days
-
     onExecutionPurged: async (execution) => {
       console.log(`Purged execution ${execution.runId}`);
     },
@@ -1102,6 +1120,12 @@ const engine = await WorkflowEngine.create({
       console.log(`Purged dead letter ${record.id}`);
     },
   },
+});
+
+// Or manually purge dead letters:
+await engine.purgeDeadLetters({
+  olderThanMs: 7 * 24 * 60 * 60 * 1000, // 7 days
+  acknowledgedOnly: true,
 });
 ```
 
@@ -1153,57 +1177,70 @@ interface StorageAdapter {
 }
 ```
 
-### MMKV Storage (Recommended)
+### SQLite Storage (Production)
 
-MMKV is the recommended storage backend for most use cases:
+SQLite is the production storage backend, providing ACID transactions and efficient querying:
 
 ```typescript
-import { MMKVStorageAdapter } from 'react-native-workflow';
+import { ExpoWorkflowClient } from 'react-native-workflow/expo';
+import { openDatabaseAsync } from 'expo-sqlite';
 
-const engine = await WorkflowEngine.create({
-  storage: new MMKVStorageAdapter({ id: 'my-app-workflows' }),
+const client = await ExpoWorkflowClient.create({
+  openDatabase: openDatabaseAsync,
+  databaseName: 'workflow.db', // optional
 });
 ```
 
-**Key Structure:**
+**Database Schema:**
 
-```
-executions:{runId}                      → WorkflowExecution object
-unique:{workflowName}:{uniqueKey}       → runId
-tasks:{taskId}                          → ActivityTask object
-index:executions:status:{status}        → [runId1, runId2, ...]
-index:tasks:status:pending              → [taskId1, taskId2, ...]
-index:tasks:execution:{runId}           → [taskId1, taskId2, ...]
-deadletter:{id}                         → DeadLetterRecord
-index:deadletter:unacked                → [id1, id2, ...]
-meta:stats                              → { totalExecutions, completed, failed, ... }
+The SQLite adapter creates tables for:
+- `executions` - WorkflowExecution records
+- `activity_tasks` - ActivityTask records
+- `dead_letters` - DeadLetterRecord records
+- `schema_meta` - Schema version tracking
+
+All data is stored relationally with proper indexes for efficient queries.
+
+### InMemory Storage (Testing)
+
+For unit tests and development, use the in-memory storage adapter:
+
+```typescript
+import { WorkflowEngine, InMemoryStorage } from 'react-native-workflow';
+
+const storage = new InMemoryStorage();
+const engine = await WorkflowEngine.create({
+  storage,
+  // ... other options
+});
 ```
 
 ### Storage Backend Comparison
 
-| Feature | MMKV | SQLite | Realm |
-|---------|------|--------|-------|
-| Setup complexity | Low | Medium | High |
-| Query flexibility | Low (manual indexes) | High (SQL) | Medium |
-| Reactivity | Built-in hooks | Manual | Built-in |
-| Atomic transactions | No | Yes | Yes |
-| Performance (simple ops) | Excellent | Good | Good |
-| Performance (complex queries) | Poor | Excellent | Good |
-| Bundle size impact | Small | Medium | Large |
-| Maintenance status | Active | Active | Uncertain |
+| Feature | SQLite (Production) | InMemory (Testing) |
+|---------|-------------------|-------------------|
+| Setup complexity | Medium | Low |
+| Query flexibility | High (SQL) | Low (in-memory) |
+| Reactivity | Manual (via hooks) | Manual (via hooks) |
+| Atomic transactions | Yes | N/A |
+| Performance (simple ops) | Good | Excellent |
+| Performance (complex queries) | Excellent | N/A |
+| Persistence | Yes | No (in-memory only) |
+| Bundle size impact | Medium | Minimal |
+| Use case | Production apps | Unit tests |
 
 ### Choosing a Backend
 
-**Start with MMKV** for most use cases:
-- Simplest setup and maintenance
-- Excellent React hooks integration (`useMMKVObject`, etc.)
-- Sufficient for < 1000 pending activities
-- Smallest bundle size
+**Use SQLite for production:**
+- ACID transactions for crash safety
+- Efficient queries for large datasets
+- Relational structure suits workflow data
+- Well-supported and actively maintained
 
-**Consider SQLite** if you need:
-- Complex queries
-- Larger queue sizes (> 5000 activities)
-- Strong consistency guarantees
+**Use InMemoryStorage for testing:**
+- Fast and simple for unit tests
+- No persistence (clean slate each test)
+- No external dependencies
 
 ---
 
@@ -1217,6 +1254,9 @@ iOS and Android limit background execution to approximately 30 seconds. The engi
 // background.ts
 import * as TaskManager from 'expo-task-manager';
 import * as BackgroundFetch from 'expo-background-fetch';
+import { ExpoWorkflowClient } from 'react-native-workflow/expo';
+import { openDatabaseAsync } from 'expo-sqlite';
+import { photoWorkflow, driverStatusSyncWorkflow } from './workflows';
 
 const BACKGROUND_TASK_NAME = 'WORKFLOW_ENGINE_BACKGROUND';
 
@@ -1224,19 +1264,23 @@ TaskManager.defineTask(BACKGROUND_TASK_NAME, async () => {
   console.log('Background task starting...');
 
   try {
-    const engine = await WorkflowEngine.create({
-      storage: new MMKVStorageAdapter(),
-      runtimeContext: () => ({
-        isConnected: getNetworkState(),
-      }),
+    const client = await ExpoWorkflowClient.create({
+      openDatabase: openDatabaseAsync,
+      environment: {
+        getNetworkState: async () => {
+          // Get network state in background
+          const state = await NetInfo.fetch();
+          return state.isConnected ?? false;
+        },
+      },
     });
 
     // Re-register all workflows (required in background context)
-    engine.registerWorkflow(photoWorkflow);
-    engine.registerWorkflow(driverStatusSyncWorkflow);
+    client.registerWorkflow(photoWorkflow);
+    client.registerWorkflow(driverStatusSyncWorkflow);
 
     // Process for limited time (OS limit ~30s, leave buffer)
-    await engine.start({ lifespan: 25000 });
+    await client.start({ lifespan: 25000 });
 
     return BackgroundFetch.BackgroundFetchResult.NewData;
   } catch (error) {
@@ -1256,16 +1300,15 @@ export async function registerBackgroundProcessing() {
 
 ### Lifespan-Aware Execution
 
-When started with a lifespan, the engine will stop gracefully before the deadline:
+When started with a lifespan, the client will stop gracefully before the deadline:
 
 ```typescript
-engine.start({ lifespan: 25000 });  // Process for max 25 seconds
+await client.start({ lifespan: 25000 });  // Process for max 25 seconds
 ```
 
-The engine will:
+The client will:
 - Stop 500ms before the deadline to allow graceful shutdown
-- Only start activities that have enough time to complete (based on timeout)
-- Skip activities that would exceed the remaining time
+- Continue processing activities until the deadline is reached
 
 ---
 
@@ -1277,13 +1320,17 @@ The engine will:
 import {
   useExecution,
   useExecutionStats,
-  usePendingActivities,
+  usePendingActivityCount,
   useDeadLetters
-} from 'react-native-workflow';
+} from 'react-native-workflow/expo';
+import { ExpoWorkflowClient } from 'react-native-workflow/expo';
+
+// You need access to the engine/client instance
+const client = await ExpoWorkflowClient.create({ /* ... */ });
 
 // Subscribe to a specific workflow execution
-function MyComponent({ runId }) {
-  const execution = useExecution(runId);
+function MyComponent({ runId, engine }) {
+  const execution = useExecution(engine, runId);
 
   if (!execution) return <Text>Loading...</Text>;
 
@@ -1296,8 +1343,8 @@ function MyComponent({ runId }) {
 }
 
 // Aggregate statistics
-function DashboardStats() {
-  const stats = useExecutionStats();
+function DashboardStats({ engine }) {
+  const stats = useExecutionStats(engine);
 
   return (
     <View>
@@ -1308,23 +1355,20 @@ function DashboardStats() {
   );
 }
 
-// Pending activities (for debugging)
-function PendingList() {
-  const tasks = usePendingActivities();
+// Pending activity count (for debugging)
+function PendingCount({ storage }) {
+  const count = usePendingActivityCount(storage);
 
   return (
-    <FlatList
-      data={tasks}
-      renderItem={({ item }) => (
-        <Text>{item.activityName} - {item.status}</Text>
-      )}
-    />
+    <View>
+      <Text>Pending activities: {count}</Text>
+    </View>
   );
 }
 
 // Monitor failures
-function FailureAlerts() {
-  const deadLetters = useDeadLetters();
+function FailureAlerts({ engine }) {
+  const deadLetters = useDeadLetters(engine);
 
   if (deadLetters.length === 0) return null;
 
@@ -1339,12 +1383,18 @@ function FailureAlerts() {
 ### Workflow Progress Component
 
 ```tsx
-function WorkflowProgress({ runId }: { runId: string }) {
-  const execution = useExecution(runId);
+import { useExecution } from 'react-native-workflow/expo';
+import { WorkflowEngine } from 'react-native-workflow';
+
+function WorkflowProgress({ runId, engine }: { runId: string; engine: WorkflowEngine }) {
+  const execution = useExecution(engine, runId);
 
   if (!execution) return <Text>Loading...</Text>;
 
-  const workflow = workflowRegistry.get(execution.workflowName);
+  // Get workflow from engine (you'd need to track this in your app)
+  const workflow = engine.getWorkflow(execution.workflowName);
+  if (!workflow) return <Text>Workflow not found</Text>;
+
   const totalActivities = workflow.activities.length;
   const currentIndex = execution.currentActivityIndex;
 
@@ -1370,15 +1420,8 @@ function WorkflowProgress({ runId }: { runId: string }) {
 ### Logging Configuration
 
 ```typescript
-const engine = await WorkflowEngine.create({
-  storage: new MMKVStorageAdapter(),
-
-  logger: {
-    debug: (msg, meta) => console.debug(`[Workflow] ${msg}`, meta),
-    info: (msg, meta) => console.info(`[Workflow] ${msg}`, meta),
-    warn: (msg, meta) => console.warn(`[Workflow] ${msg}`, meta),
-    error: (msg, meta) => console.error(`[Workflow] ${msg}`, meta),
-  },
+const client = await ExpoWorkflowClient.create({
+  openDatabase: openDatabaseAsync,
 
   onEvent: (event) => {
     // Send to analytics, crash reporting, etc.
@@ -1538,16 +1581,14 @@ export const uploadPhoto = defineActivity({
     return { s3Key: response.key, uploadedAt: Date.now() };
   },
 
-  options: {
-    startToCloseTimeout: 60000,
-    retry: {
-      maximumAttempts: 10,
-      initialInterval: 5000,
-      backoffCoefficient: 2,
-      maximumInterval: 60000,
-    },
-    runWhen: conditions.whenConnected,
+  startToCloseTimeout: 60000,
+  retry: {
+    maximumAttempts: 10,
+    initialInterval: 5000,
+    backoffCoefficient: 2,
+    maximumInterval: 60000,
   },
+  runWhen: conditions.whenConnected,
 });
 ```
 
@@ -1662,8 +1703,8 @@ Each storage adapter should pass the same test suite:
 
 ```typescript
 describe.each([
-  ['MMKV', new MMKVStorageAdapter()],
-  ['SQLite', new SQLiteStorageAdapter()],
+  ['InMemory', new InMemoryStorage()],
+  ['SQLite', new SQLiteStorage(driver)],
 ])('%s Storage Adapter', (name, adapter) => {
   it('should save and retrieve executions', async () => {
     const execution = createTestExecution();
@@ -1761,7 +1802,7 @@ How should errors in lifecycle callbacks (onComplete, onFailed) be handled? Shou
 
 ### Storage Atomicity
 
-MMKV lacks transactions. Should we implement write-ahead logging for multi-key operations to prevent inconsistent state on crashes?
+SQLite provides ACID transactions, ensuring consistency. For custom storage adapters, consider implementing transaction support for multi-key operations to prevent inconsistent state on crashes.
 
 ### Testing Strategy
 
@@ -1770,6 +1811,21 @@ How to test workflows without actual activity execution? Mock storage adapter? A
 ---
 
 ## Future Considerations
+
+### MMKV Storage Adapter
+
+An MMKV storage adapter could be implemented following the same `Storage` interface pattern. MMKV could be useful for:
+
+- Faster key-value operations for smaller datasets
+- Synchronous reads (MMKV is sync-first)
+- Simpler setup than SQLite for basic use cases
+
+However, SQLite is generally the better choice for workflow persistence because:
+
+- Workflows can have many executions/tasks (relational queries are more efficient)
+- Complex queries like "get all pending tasks scheduled before time X"
+- ACID transactions for crash safety
+- Better suited for the queue-like access patterns in the engine
 
 ### Metadata Indexing
 
