@@ -1,5 +1,16 @@
 /**
- * Tests for WorkflowEngine - Callback Error Handling
+ * Unit Test: WorkflowEngine - Callbacks
+ *
+ * Tests workflow and activity lifecycle callbacks including
+ * onSuccess, onError, onComplete, and onCancel handlers.
+ * Validates callback error isolation from workflow execution.
+ *
+ * Key scenarios tested:
+ * - Activity onSuccess/onError callbacks
+ * - Workflow onComplete/onCancel callbacks
+ * - Callback errors don't fail workflows
+ * - Callback execution order
+ * - Context available in callbacks
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';

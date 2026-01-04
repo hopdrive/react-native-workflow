@@ -1,5 +1,16 @@
 /**
- * Tests for WorkflowEngine - Phase 5: Dead Letter Queue
+ * Unit Test: WorkflowEngine - Dead Letter Queue
+ *
+ * Tests the dead letter queue (DLQ) for permanently failed activities.
+ * Validates that failed activities are recorded with their error info
+ * and can be reviewed or reprocessed later.
+ *
+ * Key scenarios tested:
+ * - DLQ entry creation on activity exhaustion
+ * - Error message and stack trace capture
+ * - Retry from dead letter queue
+ * - DLQ entry cleanup on successful retry
+ * - Query DLQ entries by workflow
  */
 
 import { WorkflowEngine } from './WorkflowEngine';

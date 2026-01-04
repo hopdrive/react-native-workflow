@@ -1,85 +1,97 @@
 /**
- * Integration Test - Photo Workflow
- * Simulates the HopDrive photo pipeline: capture -> upload -> notify
+ * Integration Test: Photo Workflow
+ *
+ * Simulates a real-world photo upload pipeline similar to the HopDrive app.
+ * Tests the complete lifecycle: capture -> upload -> notify
+ *
+ * Key scenarios tested:
+ * - Happy path with full connectivity
+ * - Offline handling and resume
+ * - Retry behavior on transient failures
+ * - Concurrent workflow isolation
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
-import { WorkflowEngine } from '../../src/core/engine';
-import { InMemoryStorage } from '../../src/core/storage';
-import { MockClock, MockScheduler, MockEnvironment } from '../../src/core/mocks';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { defineActivity, defineWorkflow } from '../../src/core/definitions';
 import { conditions } from '../../src/core/conditions';
-import { runUntilComplete, sleep } from '../utils/testHelpers';
+import { createTestContext, runToCompletion, sleep, TestContext } from '../utils/testHelpers';
 
 describe('Photo Workflow Integration', () => {
-  let storage: InMemoryStorage;
-  let clock: MockClock;
-  let scheduler: MockScheduler;
-  let environment: MockEnvironment;
+  let ctx: TestContext;
   let completedCallbacks: Array<{ runId: string; state: Record<string, unknown> }>;
 
-  beforeEach(() => {
-    storage = new InMemoryStorage();
-    clock = new MockClock(1000000);
-    scheduler = new MockScheduler(clock);
-    environment = new MockEnvironment({ isConnected: true });
+  beforeEach(async () => {
+    ctx = await createTestContext();
     completedCallbacks = [];
   });
 
-  async function createEngine(): Promise<WorkflowEngine> {
-    return WorkflowEngine.create({
-      storage,
-      clock,
-      scheduler,
-      environment,
-    });
-  }
+  afterEach(() => {
+    ctx.engine.stop();
+  });
 
-  // Define photo workflow activities
+  // ===========================================================================
+  // Activity Definitions
+  // ===========================================================================
+
+  /**
+   * Step 1: Capture and process the photo locally.
+   * This runs offline - no network needed.
+   */
   const capturePhoto = defineActivity({
     name: 'capturePhoto',
     startToCloseTimeout: 5000,
     retry: { maximumAttempts: 3 },
-    execute: async (ctx) => {
-      const uri = ctx.input.uri as string;
+    execute: async (ctxAct) => {
+      const uri = ctxAct.input.uri as string;
       const hash = `hash_${Date.now()}_${Math.random().toString(36).slice(2)}`;
-      return { hash, processedUri: uri, capturedAt: clock.now() };
+      return { hash, processedUri: uri, capturedAt: Date.now() };
     },
   });
 
+  /**
+   * Step 2: Upload photo to cloud storage.
+   * Requires network - will gate when offline.
+   */
   const uploadPhoto = defineActivity({
     name: 'uploadPhoto',
     startToCloseTimeout: 60000,
     retry: { maximumAttempts: 10, initialInterval: 5000, backoffCoefficient: 2 },
     runWhen: conditions.whenConnected,
-    execute: async (ctx) => {
-      const hash = ctx.input.hash as string;
-      if (!ctx.isConnected) {
+    execute: async (ctxAct) => {
+      const hash = ctxAct.input.hash as string;
+      if (!ctxAct.isConnected) {
         throw new Error('No network connection');
       }
       await sleep(10);
       return {
         s3Key: `uploads/${hash}.jpg`,
-        uploadedAt: clock.now(),
+        uploadedAt: Date.now(),
         contentLength: 1024000,
       };
     },
   });
 
+  /**
+   * Step 3: Notify the server about the upload.
+   * Requires network - will gate when offline.
+   */
   const notifyServer = defineActivity({
     name: 'notifyServer',
     startToCloseTimeout: 30000,
     retry: { maximumAttempts: 5, initialInterval: 1000 },
     runWhen: conditions.whenConnected,
-    execute: async (ctx) => {
-      if (!ctx.isConnected) {
+    execute: async (ctxAct) => {
+      if (!ctxAct.isConnected) {
         throw new Error('No network connection');
       }
       await sleep(5);
-      return { notifiedAt: clock.now(), photoId: `photo_${Date.now()}` };
+      return { notifiedAt: Date.now(), photoId: `photo_${Date.now()}` };
     },
   });
 
+  /**
+   * Creates the complete photo workflow.
+   */
   function createPhotoWorkflow() {
     return defineWorkflow({
       name: 'photo',
@@ -90,16 +102,18 @@ describe('Photo Workflow Integration', () => {
     });
   }
 
+  // ===========================================================================
+  // Test Cases
+  // ===========================================================================
+
   describe('Happy path', () => {
     it('should complete full photo workflow when online', async () => {
       const photoWorkflow = createPhotoWorkflow();
-      const engine = await createEngine();
-
-      const execution = await engine.start(photoWorkflow, {
+      const execution = await ctx.engine.start(photoWorkflow, {
         input: { moveId: 123, uri: 'file://photo.jpg' },
       });
 
-      const result = await runUntilComplete(engine, execution.runId);
+      const result = await runToCompletion(ctx, execution.runId);
 
       expect(result.status).toBe('completed');
       expect(result.state).toMatchObject({
@@ -116,31 +130,27 @@ describe('Photo Workflow Integration', () => {
 
     it('should preserve moveId throughout workflow', async () => {
       const photoWorkflow = createPhotoWorkflow();
-      const engine = await createEngine();
-
-      const execution = await engine.start(photoWorkflow, {
+      const execution = await ctx.engine.start(photoWorkflow, {
         input: { moveId: 456, uri: 'file://test.jpg' },
       });
 
-      await runUntilComplete(engine, execution.runId);
+      await runToCompletion(ctx, execution.runId);
 
-      const result = await engine.getExecution(execution.runId);
+      const result = await ctx.engine.getExecution(execution.runId);
       expect(result?.input.moveId).toBe(456);
       expect(result?.state.moveId).toBe(456);
     });
 
     it('should maintain execution history through completion', async () => {
       const photoWorkflow = createPhotoWorkflow();
-      const engine = await createEngine();
-
-      const execution = await engine.start(photoWorkflow, {
+      const execution = await ctx.engine.start(photoWorkflow, {
         input: { moveId: 789, uri: 'file://history.jpg' },
       });
 
-      await runUntilComplete(engine, execution.runId);
+      await runToCompletion(ctx, execution.runId);
 
-      const result = await engine.getExecution(execution.runId);
-      // currentActivityIndex is 2 (0-indexed last activity) when workflow completes
+      const result = await ctx.engine.getExecution(execution.runId);
+      // currentActivityIndex stays at last activity (2) when completed
       expect(result?.currentActivityIndex).toBe(2);
       expect(result?.status).toBe('completed');
     });
@@ -148,19 +158,17 @@ describe('Photo Workflow Integration', () => {
 
   describe('Offline handling', () => {
     it('should complete capturePhoto but gate uploadPhoto when offline', async () => {
-      environment.setConnected(false);
-
+      ctx.environment.setConnected(false);
       const photoWorkflow = createPhotoWorkflow();
-      const engine = await createEngine();
 
-      const execution = await engine.start(photoWorkflow, {
+      const execution = await ctx.engine.start(photoWorkflow, {
         input: { moveId: 123, uri: 'file://photo.jpg' },
       });
 
-      await engine.tick(); // capturePhoto completes
-      await engine.tick(); // uploadPhoto skipped (no network)
+      await ctx.engine.tick(); // capturePhoto completes
+      await ctx.engine.tick(); // uploadPhoto skipped (no network)
 
-      const result = await engine.getExecution(execution.runId);
+      const result = await ctx.engine.getExecution(execution.runId);
       expect(result?.status).toBe('running');
       expect(result?.currentActivityName).toBe('uploadPhoto');
       expect(result?.state.hash).toBeDefined(); // capturePhoto completed
@@ -168,67 +176,63 @@ describe('Photo Workflow Integration', () => {
     });
 
     it('should resume uploadPhoto when connectivity returns', async () => {
-      environment.setConnected(false);
-
+      ctx.environment.setConnected(false);
       const photoWorkflow = createPhotoWorkflow();
-      const engine = await createEngine();
 
-      const execution = await engine.start(photoWorkflow, {
+      const execution = await ctx.engine.start(photoWorkflow, {
         input: { moveId: 123, uri: 'file://photo.jpg' },
       });
 
-      await engine.tick(); // capturePhoto
-      await engine.tick(); // uploadPhoto skipped
+      await ctx.engine.tick(); // capturePhoto
+      await ctx.engine.tick(); // uploadPhoto skipped
 
       // Connectivity restored
-      environment.setConnected(true);
+      ctx.environment.setConnected(true);
 
-      // Pass clock to advance past gating delay
-      await runUntilComplete(engine, execution.runId, { clock });
+      // Run with clock advancing to pass gating delay
+      await runToCompletion(ctx, execution.runId, { advanceClock: true });
 
-      const result = await engine.getExecution(execution.runId);
+      const result = await ctx.engine.getExecution(execution.runId);
       expect(result?.status).toBe('completed');
       expect(result?.state.s3Key).toBeDefined();
     });
 
     it('should handle multiple connectivity transitions', async () => {
       const photoWorkflow = createPhotoWorkflow();
-      const engine = await createEngine();
-
-      const execution = await engine.start(photoWorkflow, {
+      const execution = await ctx.engine.start(photoWorkflow, {
         input: { moveId: 123, uri: 'file://photo.jpg' },
       });
 
       // Capture works (doesn't need network)
-      await engine.tick();
+      await ctx.engine.tick();
 
       // Upload gated
-      environment.setConnected(false);
-      await engine.tick();
+      ctx.environment.setConnected(false);
+      await ctx.engine.tick();
 
-      let result = await engine.getExecution(execution.runId);
+      let result = await ctx.engine.getExecution(execution.runId);
       expect(result?.currentActivityName).toBe('uploadPhoto');
 
-      // Network back - advance clock past gating delay, then upload completes
-      environment.setConnected(true);
-      clock.advance(35000);
-      await engine.tick();
+      // Network back - advance clock past gating delay
+      ctx.environment.setConnected(true);
+      ctx.clock.advance(35000);
+      await ctx.engine.tick();
 
       // Network drops again
-      environment.setConnected(false);
-      await engine.tick(); // notifyServer skipped
+      ctx.environment.setConnected(false);
+      await ctx.engine.tick(); // notifyServer skipped
 
-      result = await engine.getExecution(execution.runId);
+      result = await ctx.engine.getExecution(execution.runId);
       expect(result?.currentActivityName).toBe('notifyServer');
       expect(result?.state.s3Key).toBeDefined();
       expect(result?.state.notifiedAt).toBeUndefined();
 
-      // Finally back online - advance clock
-      environment.setConnected(true);
-      clock.advance(35000);
-      await engine.tick();
+      // Finally back online
+      ctx.environment.setConnected(true);
+      ctx.clock.advance(35000);
+      await ctx.engine.tick();
 
-      result = await engine.getExecution(execution.runId);
+      result = await ctx.engine.getExecution(execution.runId);
       expect(result?.status).toBe('completed');
     });
   });
@@ -246,7 +250,7 @@ describe('Photo Workflow Integration', () => {
           if (uploadAttempts < 3) {
             throw new Error('Network timeout');
           }
-          return { s3Key: 'uploads/success.jpg', uploadedAt: clock.now() };
+          return { s3Key: 'uploads/success.jpg', uploadedAt: Date.now() };
         },
       });
 
@@ -255,21 +259,19 @@ describe('Photo Workflow Integration', () => {
         activities: [capturePhoto, flakyUpload, notifyServer],
       });
 
-      const engine = await createEngine();
-
-      const execution = await engine.start(flakyWorkflow, {
+      const execution = await ctx.engine.start(flakyWorkflow, {
         input: { moveId: 123, uri: 'file://photo.jpg' },
       });
 
       // Process with retries
       for (let i = 0; i < 10; i++) {
-        await engine.tick();
-        clock.advance(50);
+        await ctx.engine.tick();
+        ctx.clock.advance(50);
       }
 
       expect(uploadAttempts).toBe(3);
 
-      const result = await engine.getExecution(execution.runId);
+      const result = await ctx.engine.getExecution(execution.runId);
       expect(result?.status).toBe('completed');
     });
   });
@@ -277,21 +279,20 @@ describe('Photo Workflow Integration', () => {
   describe('Concurrent workflows', () => {
     it('should process multiple photo workflows independently', async () => {
       const photoWorkflow = createPhotoWorkflow();
-      const engine = await createEngine();
 
       const executions = await Promise.all([
-        engine.start(photoWorkflow, { input: { moveId: 1, uri: 'photo1.jpg' } }),
-        engine.start(photoWorkflow, { input: { moveId: 2, uri: 'photo2.jpg' } }),
-        engine.start(photoWorkflow, { input: { moveId: 3, uri: 'photo3.jpg' } }),
+        ctx.engine.start(photoWorkflow, { input: { moveId: 1, uri: 'photo1.jpg' } }),
+        ctx.engine.start(photoWorkflow, { input: { moveId: 2, uri: 'photo2.jpg' } }),
+        ctx.engine.start(photoWorkflow, { input: { moveId: 3, uri: 'photo3.jpg' } }),
       ]);
 
       // Process all
       for (let i = 0; i < 15; i++) {
-        await engine.tick();
+        await ctx.engine.tick();
       }
 
       for (const exec of executions) {
-        const result = await engine.getExecution(exec.runId);
+        const result = await ctx.engine.getExecution(exec.runId);
         expect(result?.status).toBe('completed');
       }
 
@@ -304,9 +305,9 @@ describe('Photo Workflow Integration', () => {
       const flakyActivity = defineActivity({
         name: 'capturePhoto',
         retry: { maximumAttempts: 1 },
-        execute: async (ctx) => {
-          if (ctx.input.shouldFail) {
-            failedWorkflowId = ctx.runId;
+        execute: async (ctxAct) => {
+          if (ctxAct.input.shouldFail) {
+            failedWorkflowId = ctxAct.runId;
             throw new Error('Intentional failure');
           }
           return { hash: 'success' };
@@ -318,21 +319,19 @@ describe('Photo Workflow Integration', () => {
         activities: [flakyActivity, uploadPhoto, notifyServer],
       });
 
-      const engine = await createEngine();
-
       const executions = await Promise.all([
-        engine.start(flakyWorkflow, { input: { moveId: 1, shouldFail: false } }),
-        engine.start(flakyWorkflow, { input: { moveId: 2, shouldFail: true } }),
-        engine.start(flakyWorkflow, { input: { moveId: 3, shouldFail: false } }),
+        ctx.engine.start(flakyWorkflow, { input: { moveId: 1, shouldFail: false } }),
+        ctx.engine.start(flakyWorkflow, { input: { moveId: 2, shouldFail: true } }),
+        ctx.engine.start(flakyWorkflow, { input: { moveId: 3, shouldFail: false } }),
       ]);
 
       // Process all
       for (let i = 0; i < 15; i++) {
-        await engine.tick();
+        await ctx.engine.tick();
       }
 
       const results = await Promise.all(
-        executions.map((e) => engine.getExecution(e.runId))
+        executions.map((e) => ctx.engine.getExecution(e.runId))
       );
 
       const completed = results.filter((r) => r?.status === 'completed');

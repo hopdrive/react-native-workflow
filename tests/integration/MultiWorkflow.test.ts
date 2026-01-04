@@ -1,52 +1,51 @@
 /**
- * Integration Test - Multiple Workflow Types
+ * Integration Test: Multiple Workflow Types
+ *
  * Tests running different workflow types concurrently with proper isolation.
+ * Validates that the engine can handle heterogeneous workloads without
+ * cross-contamination between workflow instances.
+ *
+ * Key scenarios tested:
+ * - Different workflow types running concurrently
+ * - State isolation between workflows
+ * - UniqueKey handling across workflow types
+ * - Mixed online/offline workflow handling
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
-import { WorkflowEngine } from '../../src/core/engine';
-import { InMemoryStorage } from '../../src/core/storage';
-import { MockClock, MockScheduler, MockEnvironment } from '../../src/core/mocks';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { defineActivity, defineWorkflow } from '../../src/core/definitions';
 import { conditions } from '../../src/core/conditions';
-import { runUntilComplete } from '../utils/testHelpers';
+import { createTestContext, runToCompletion, TestContext } from '../utils/testHelpers';
 
 describe('Multi-Workflow Integration', () => {
-  let storage: InMemoryStorage;
-  let clock: MockClock;
-  let scheduler: MockScheduler;
-  let environment: MockEnvironment;
+  let ctx: TestContext;
 
-  beforeEach(() => {
-    storage = new InMemoryStorage();
-    clock = new MockClock(1000000);
-    scheduler = new MockScheduler(clock);
-    environment = new MockEnvironment({ isConnected: true });
+  beforeEach(async () => {
+    ctx = await createTestContext();
   });
 
-  async function createEngine(): Promise<WorkflowEngine> {
-    return WorkflowEngine.create({
-      storage,
-      clock,
-      scheduler,
-      environment,
-    });
-  }
+  afterEach(() => {
+    ctx.engine.stop();
+  });
 
-  // Photo workflow
+  // ===========================================================================
+  // Workflow Definitions
+  // ===========================================================================
+
+  // Photo workflow - captures and uploads photos
   const photoCapture = defineActivity({
     name: 'photoCapture',
-    execute: async (ctx) => ({
+    execute: async (actCtx) => ({
       photoId: `photo_${Date.now()}`,
-      moveId: ctx.input.moveId,
+      moveId: actCtx.input.moveId,
     }),
   });
 
   const photoUpload = defineActivity({
     name: 'photoUpload',
     runWhen: conditions.whenConnected,
-    execute: async (ctx) => ({
-      s3Key: `photos/${ctx.input.photoId}.jpg`,
+    execute: async (actCtx) => ({
+      s3Key: `photos/${actCtx.input.photoId}.jpg`,
       uploadedAt: Date.now(),
     }),
   });
@@ -56,7 +55,7 @@ describe('Multi-Workflow Integration', () => {
     activities: [photoCapture, photoUpload],
   });
 
-  // Sync workflow
+  // Sync workflow - fetches and merges remote data
   const fetchRemoteData = defineActivity({
     name: 'fetchRemoteData',
     runWhen: conditions.whenConnected,
@@ -68,9 +67,9 @@ describe('Multi-Workflow Integration', () => {
 
   const mergeLocalData = defineActivity({
     name: 'mergeLocalData',
-    execute: async (ctx) => ({
+    execute: async (actCtx) => ({
       merged: true,
-      itemCount: (ctx.input.remoteData as { items: string[] }).items.length,
+      itemCount: (actCtx.input.remoteData as { items: string[] }).items.length,
     }),
   });
 
@@ -79,7 +78,7 @@ describe('Multi-Workflow Integration', () => {
     activities: [fetchRemoteData, mergeLocalData],
   });
 
-  // Cleanup workflow
+  // Cleanup workflow - performs local maintenance
   const cleanupOldFiles = defineActivity({
     name: 'cleanupOldFiles',
     execute: async () => ({
@@ -101,28 +100,24 @@ describe('Multi-Workflow Integration', () => {
     activities: [cleanupOldFiles, cleanupDatabase],
   });
 
+  // ===========================================================================
+  // Test Cases
+  // ===========================================================================
+
   describe('Different workflow types concurrently', () => {
     it('should run multiple different workflows independently', async () => {
-      const engine = await createEngine();
-
-      const photoExec = await engine.start(photoWorkflow, {
-        input: { moveId: 123 },
-      });
-      const syncExec = await engine.start(syncWorkflow, {
-        input: {},
-      });
-      const cleanupExec = await engine.start(cleanupWorkflow, {
-        input: {},
-      });
+      const photoExec = await ctx.engine.start(photoWorkflow, { input: { moveId: 123 } });
+      const syncExec = await ctx.engine.start(syncWorkflow, { input: {} });
+      const cleanupExec = await ctx.engine.start(cleanupWorkflow, { input: {} });
 
       // Process all workflows
       for (let i = 0; i < 10; i++) {
-        await engine.tick();
+        await ctx.engine.tick();
       }
 
-      const photoResult = await engine.getExecution(photoExec.runId);
-      const syncResult = await engine.getExecution(syncExec.runId);
-      const cleanupResult = await engine.getExecution(cleanupExec.runId);
+      const photoResult = await ctx.engine.getExecution(photoExec.runId);
+      const syncResult = await ctx.engine.getExecution(syncExec.runId);
+      const cleanupResult = await ctx.engine.getExecution(cleanupExec.runId);
 
       expect(photoResult?.status).toBe('completed');
       expect(syncResult?.status).toBe('completed');
@@ -135,21 +130,19 @@ describe('Multi-Workflow Integration', () => {
     });
 
     it('should isolate state between different workflow types', async () => {
-      const engine = await createEngine();
-
-      const exec1 = await engine.start(photoWorkflow, {
+      const exec1 = await ctx.engine.start(photoWorkflow, {
         input: { moveId: 1, customField: 'photo' },
       });
-      const exec2 = await engine.start(syncWorkflow, {
+      const exec2 = await ctx.engine.start(syncWorkflow, {
         input: { customField: 'sync' },
       });
 
       for (let i = 0; i < 10; i++) {
-        await engine.tick();
+        await ctx.engine.tick();
       }
 
-      const result1 = await engine.getExecution(exec1.runId);
-      const result2 = await engine.getExecution(exec2.runId);
+      const result1 = await ctx.engine.getExecution(exec1.runId);
+      const result2 = await ctx.engine.getExecution(exec2.runId);
 
       // Photo workflow state should not affect sync workflow state
       expect(result1?.state.photoId).toBeDefined();
@@ -160,14 +153,12 @@ describe('Multi-Workflow Integration', () => {
     });
 
     it('should allow same uniqueKey for different workflow types', async () => {
-      const engine = await createEngine();
-
       // Same key, different workflow types - should be allowed
-      const photoExec = await engine.start(photoWorkflow, {
+      const photoExec = await ctx.engine.start(photoWorkflow, {
         input: { moveId: 1 },
         uniqueKey: 'shared-key',
       });
-      const syncExec = await engine.start(syncWorkflow, {
+      const syncExec = await ctx.engine.start(syncWorkflow, {
         input: {},
         uniqueKey: 'shared-key',
       });
@@ -175,11 +166,11 @@ describe('Multi-Workflow Integration', () => {
       expect(photoExec.runId).not.toBe(syncExec.runId);
 
       for (let i = 0; i < 10; i++) {
-        await engine.tick();
+        await ctx.engine.tick();
       }
 
-      const photoResult = await engine.getExecution(photoExec.runId);
-      const syncResult = await engine.getExecution(syncExec.runId);
+      const photoResult = await ctx.engine.getExecution(photoExec.runId);
+      const syncResult = await ctx.engine.getExecution(syncExec.runId);
 
       expect(photoResult?.status).toBe('completed');
       expect(syncResult?.status).toBe('completed');
@@ -188,35 +179,31 @@ describe('Multi-Workflow Integration', () => {
 
   describe('Same workflow type multiple times', () => {
     it('should run multiple instances of same workflow type', async () => {
-      const engine = await createEngine();
-
       const executions = await Promise.all([
-        engine.start(photoWorkflow, { input: { moveId: 1 } }),
-        engine.start(photoWorkflow, { input: { moveId: 2 } }),
-        engine.start(photoWorkflow, { input: { moveId: 3 } }),
+        ctx.engine.start(photoWorkflow, { input: { moveId: 1 } }),
+        ctx.engine.start(photoWorkflow, { input: { moveId: 2 } }),
+        ctx.engine.start(photoWorkflow, { input: { moveId: 3 } }),
       ]);
 
       for (let i = 0; i < 15; i++) {
-        await engine.tick();
+        await ctx.engine.tick();
       }
 
       for (const exec of executions) {
-        const result = await engine.getExecution(exec.runId);
+        const result = await ctx.engine.getExecution(exec.runId);
         expect(result?.status).toBe('completed');
       }
     });
 
     it('should prevent duplicate uniqueKey for same workflow type', async () => {
-      const engine = await createEngine();
-
-      await engine.start(photoWorkflow, {
+      await ctx.engine.start(photoWorkflow, {
         input: { moveId: 1 },
         uniqueKey: 'unique-photo',
       });
 
       // Second start with same key should throw
       await expect(
-        engine.start(photoWorkflow, {
+        ctx.engine.start(photoWorkflow, {
           input: { moveId: 2 },
           uniqueKey: 'unique-photo',
         })
@@ -226,57 +213,45 @@ describe('Multi-Workflow Integration', () => {
 
   describe('Mixed online/offline workflows', () => {
     it('should allow offline workflow to complete while online workflow waits', async () => {
-      environment.setConnected(false);
-      const engine = await createEngine();
+      ctx.environment.setConnected(false);
 
       // Cleanup doesn't need network
-      const cleanupExec = await engine.start(cleanupWorkflow, {
-        input: {},
-      });
-
+      const cleanupExec = await ctx.engine.start(cleanupWorkflow, { input: {} });
       // Sync needs network
-      const syncExec = await engine.start(syncWorkflow, {
-        input: {},
-      });
+      const syncExec = await ctx.engine.start(syncWorkflow, { input: {} });
 
       // Process both
       for (let i = 0; i < 10; i++) {
-        await engine.tick();
-        clock.advance(1000);
+        await ctx.engine.tick();
+        ctx.clock.advance(1000);
       }
 
-      const cleanupResult = await engine.getExecution(cleanupExec.runId);
-      const syncResult = await engine.getExecution(syncExec.runId);
+      const cleanupResult = await ctx.engine.getExecution(cleanupExec.runId);
+      const syncResult = await ctx.engine.getExecution(syncExec.runId);
 
       expect(cleanupResult?.status).toBe('completed');
       expect(syncResult?.status).toBe('running'); // Still waiting for network
     });
 
     it('should resume all gated workflows when connectivity returns', async () => {
-      environment.setConnected(false);
-      const engine = await createEngine();
+      ctx.environment.setConnected(false);
 
-      const photoExec = await engine.start(photoWorkflow, {
-        input: { moveId: 1 },
-      });
-      const syncExec = await engine.start(syncWorkflow, {
-        input: {},
-      });
+      const photoExec = await ctx.engine.start(photoWorkflow, { input: { moveId: 1 } });
+      const syncExec = await ctx.engine.start(syncWorkflow, { input: {} });
 
       // Both have network-dependent activities
       for (let i = 0; i < 5; i++) {
-        await engine.tick();
+        await ctx.engine.tick();
       }
 
-      // Connect and advance clock
-      environment.setConnected(true);
-      clock.advance(35000);
+      // Connect and run to completion
+      ctx.environment.setConnected(true);
 
-      await runUntilComplete(engine, photoExec.runId, { clock });
-      await runUntilComplete(engine, syncExec.runId, { clock });
+      await runToCompletion(ctx, photoExec.runId, { advanceClock: true });
+      await runToCompletion(ctx, syncExec.runId, { advanceClock: true });
 
-      const photoResult = await engine.getExecution(photoExec.runId);
-      const syncResult = await engine.getExecution(syncExec.runId);
+      const photoResult = await ctx.engine.getExecution(photoExec.runId);
+      const syncResult = await ctx.engine.getExecution(syncExec.runId);
 
       expect(photoResult?.status).toBe('completed');
       expect(syncResult?.status).toBe('completed');
@@ -285,32 +260,28 @@ describe('Multi-Workflow Integration', () => {
 
   describe('Query and filtering', () => {
     it('should query executions by status', async () => {
-      const engine = await createEngine();
+      await ctx.engine.start(photoWorkflow, { input: { moveId: 1 } });
+      await ctx.engine.start(syncWorkflow, { input: {} });
+      await ctx.engine.start(cleanupWorkflow, { input: {} });
 
-      await engine.start(photoWorkflow, { input: { moveId: 1 } });
-      await engine.start(syncWorkflow, { input: {} });
-      await engine.start(cleanupWorkflow, { input: {} });
-
-      const running = await engine.getExecutionsByStatus('running');
+      const running = await ctx.engine.getExecutionsByStatus('running');
       expect(running.length).toBe(3);
 
       // Complete one
-      await engine.tick();
+      await ctx.engine.tick();
 
-      const stillRunning = await engine.getExecutionsByStatus('running');
-      const completed = await engine.getExecutionsByStatus('completed');
+      const stillRunning = await ctx.engine.getExecutionsByStatus('running');
+      const completed = await ctx.engine.getExecutionsByStatus('completed');
 
       expect(stillRunning.length + completed.length).toBe(3);
     });
 
     it('should get execution by runId across workflow types', async () => {
-      const engine = await createEngine();
+      const photoExec = await ctx.engine.start(photoWorkflow, { input: { moveId: 1 } });
+      const syncExec = await ctx.engine.start(syncWorkflow, { input: {} });
 
-      const photoExec = await engine.start(photoWorkflow, { input: { moveId: 1 } });
-      const syncExec = await engine.start(syncWorkflow, { input: {} });
-
-      const fetchedPhoto = await engine.getExecution(photoExec.runId);
-      const fetchedSync = await engine.getExecution(syncExec.runId);
+      const fetchedPhoto = await ctx.engine.getExecution(photoExec.runId);
+      const fetchedSync = await ctx.engine.getExecution(syncExec.runId);
 
       expect(fetchedPhoto?.workflowName).toBe('photo');
       expect(fetchedSync?.workflowName).toBe('sync');
@@ -337,13 +308,11 @@ describe('Multi-Workflow Integration', () => {
         },
       });
 
-      const engine = await createEngine();
-
-      const photoExec = await engine.start(photoWithCallback, { input: { moveId: 1 } });
-      const syncExec = await engine.start(syncWithCallback, { input: {} });
+      const photoExec = await ctx.engine.start(photoWithCallback, { input: { moveId: 1 } });
+      const syncExec = await ctx.engine.start(syncWithCallback, { input: {} });
 
       for (let i = 0; i < 10; i++) {
-        await engine.tick();
+        await ctx.engine.tick();
       }
 
       expect(completedCallbacks).toHaveLength(2);

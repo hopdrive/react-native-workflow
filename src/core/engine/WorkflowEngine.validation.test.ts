@@ -1,5 +1,16 @@
 /**
- * Tests for WorkflowEngine - Input Validation
+ * Unit Test: WorkflowEngine - Input Validation
+ *
+ * Tests input validation and error handling for invalid configurations.
+ * Validates that the engine rejects malformed workflows, activities,
+ * and execution parameters with clear error messages.
+ *
+ * Key scenarios tested:
+ * - Invalid workflow definitions
+ * - Invalid activity definitions
+ * - Missing required fields
+ * - Type validation
+ * - Error message clarity
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';

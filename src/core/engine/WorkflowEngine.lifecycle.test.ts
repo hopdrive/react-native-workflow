@@ -1,5 +1,15 @@
 /**
- * Tests for WorkflowEngine - Phase 2: Task Lifecycle + Restart Simulation
+ * Unit Test: WorkflowEngine - Task Lifecycle
+ *
+ * Tests task state transitions and restart/recovery scenarios.
+ * Validates that tasks move through correct states and can
+ * be recovered after engine restarts.
+ *
+ * Key scenarios tested:
+ * - Task state transitions (pending → active → completed)
+ * - Engine restart with tasks in various states
+ * - Recovery of running workflows after restart
+ * - Pending task processing after recovery
  */
 
 import { WorkflowEngine } from './WorkflowEngine';

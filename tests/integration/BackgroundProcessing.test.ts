@@ -1,37 +1,37 @@
 /**
- * Integration Test - Background Processing
+ * Integration Test: Background Processing
+ *
  * Tests for background task execution, scheduling, and lifecycle.
+ * Validates engine behavior for scheduled tasks, long-running workflows,
+ * and various runtime conditions.
+ *
+ * Key scenarios tested:
+ * - Task scheduling and timing
+ * - Long-running workflows
+ * - Resource-aware processing (battery, app state)
+ * - Tick behavior and error resilience
+ * - Engine lifecycle events
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { WorkflowEngine } from '../../src/core/engine';
-import { InMemoryStorage } from '../../src/core/storage';
-import { MockClock, MockScheduler, MockEnvironment } from '../../src/core/mocks';
 import { defineActivity, defineWorkflow } from '../../src/core/definitions';
-import { conditions } from '../../src/core/conditions';
-import { runUntilComplete, sleep } from '../utils/testHelpers';
+import { createTestContext, TestContext } from '../utils/testHelpers';
 
 describe('Background Processing Integration', () => {
-  let storage: InMemoryStorage;
-  let clock: MockClock;
-  let scheduler: MockScheduler;
-  let environment: MockEnvironment;
+  let ctx: TestContext;
 
-  beforeEach(() => {
-    storage = new InMemoryStorage();
-    clock = new MockClock(1000000);
-    scheduler = new MockScheduler(clock);
-    environment = new MockEnvironment({ isConnected: true });
+  beforeEach(async () => {
+    ctx = await createTestContext();
   });
 
-  async function createEngine(): Promise<WorkflowEngine> {
-    return WorkflowEngine.create({
-      storage,
-      clock,
-      scheduler,
-      environment,
-    });
-  }
+  afterEach(() => {
+    ctx.engine.stop();
+  });
+
+  // ===========================================================================
+  // Scheduled Activity Processing
+  // ===========================================================================
 
   describe('Scheduled activity processing', () => {
     it('should process newly created tasks immediately', async () => {
@@ -40,7 +40,7 @@ describe('Background Processing Integration', () => {
       const delayedActivity = defineActivity({
         name: 'delayed',
         execute: async () => {
-          executionTime = clock.now();
+          executionTime = ctx.clock.now();
           return { executed: true };
         },
       });
@@ -50,19 +50,18 @@ describe('Background Processing Integration', () => {
         activities: [delayedActivity],
       });
 
-      const engine = await createEngine();
-      const execution = await engine.start(workflow, { input: {} });
+      const execution = await ctx.engine.start(workflow, { input: {} });
 
       // Get the task - should exist and be pending
-      const tasks = await storage.getActivityTasksForExecution(execution.runId);
+      const tasks = await ctx.storage.getActivityTasksForExecution(execution.runId);
       expect(tasks).toHaveLength(1);
       expect(tasks[0]?.status).toBe('pending');
 
-      await engine.tick();
+      await ctx.engine.tick();
 
       expect(executionTime).toBeGreaterThan(0);
 
-      const result = await engine.getExecution(execution.runId);
+      const result = await ctx.engine.getExecution(execution.runId);
       expect(result?.status).toBe('completed');
     });
 
@@ -82,28 +81,31 @@ describe('Background Processing Integration', () => {
         activities: [activity],
       });
 
-      const engine = await createEngine();
-      const execution = await engine.start(workflow, { input: {} });
+      const execution = await ctx.engine.start(workflow, { input: {} });
 
       // Manually update task to be scheduled for future
-      const tasks = await storage.getActivityTasksForExecution(execution.runId);
-      await storage.saveActivityTask({
+      const tasks = await ctx.storage.getActivityTasksForExecution(execution.runId);
+      await ctx.storage.saveActivityTask({
         ...tasks[0]!,
-        scheduledFor: clock.now() + 60000, // 1 minute in future
+        scheduledFor: ctx.clock.now() + 60000, // 1 minute in future
       });
 
       // Tick should not process
-      await engine.tick();
+      await ctx.engine.tick();
       expect(executed).toBe(false);
 
       // Advance clock
-      clock.advance(60001);
+      ctx.clock.advance(60001);
 
       // Now it should process
-      await engine.tick();
+      await ctx.engine.tick();
       expect(executed).toBe(true);
     });
   });
+
+  // ===========================================================================
+  // Long-Running Workflows
+  // ===========================================================================
 
   describe('Long-running workflows', () => {
     it('should handle workflows that span long time periods', async () => {
@@ -112,8 +114,8 @@ describe('Background Processing Integration', () => {
       const logTime = defineActivity({
         name: 'logTime',
         execute: async () => {
-          timestamps.push(clock.now());
-          return { time: clock.now() };
+          timestamps.push(ctx.clock.now());
+          return { time: ctx.clock.now() };
         },
       });
 
@@ -128,24 +130,22 @@ describe('Background Processing Integration', () => {
         activities: [logTime, waitActivity, logTime],
       });
 
-      const engine = await createEngine();
-      const execution = await engine.start(workflow, { input: {} });
+      const execution = await ctx.engine.start(workflow, { input: {} });
 
       // First activity
-      await engine.tick();
+      await ctx.engine.tick();
       expect(timestamps).toHaveLength(1);
 
       // Simulate days passing while waiting
-      clock.advance(1000 * 60 * 60 * 24 * 3); // 3 days
+      ctx.clock.advance(1000 * 60 * 60 * 24 * 3); // 3 days
 
       // Still waiting
-      await engine.tick();
+      await ctx.engine.tick();
 
-      // Eventually unblock (by changing the activity for this test)
-      // We'll just cancel to end the test
-      await engine.cancelExecution(execution.runId);
+      // Cancel to end the test
+      await ctx.engine.cancelExecution(execution.runId);
 
-      const result = await engine.getExecution(execution.runId);
+      const result = await ctx.engine.getExecution(execution.runId);
       expect(result?.status).toBe('cancelled');
     });
 
@@ -154,7 +154,7 @@ describe('Background Processing Integration', () => {
         defineActivity({
           name: `step${i}`,
           execute: async () => ({
-            [`step${i}`]: `completed at ${clock.now()}`,
+            [`step${i}`]: `completed at ${ctx.clock.now()}`,
           }),
         })
       );
@@ -164,20 +164,25 @@ describe('Background Processing Integration', () => {
         activities,
       });
 
-      const engine = await createEngine();
-      const execution = await engine.start(workflow, { input: { startTime: clock.now() } });
+      const execution = await ctx.engine.start(workflow, {
+        input: { startTime: ctx.clock.now() },
+      });
 
       // Process each step with time gaps
       for (let i = 0; i < 10; i++) {
-        await engine.tick();
-        clock.advance(1000 * 60 * 60); // 1 hour between steps
+        await ctx.engine.tick();
+        ctx.clock.advance(1000 * 60 * 60); // 1 hour between steps
       }
 
-      const result = await engine.getExecution(execution.runId);
+      const result = await ctx.engine.getExecution(execution.runId);
       expect(result?.status).toBe('completed');
       expect(Object.keys(result?.state ?? {}).length).toBe(11); // 10 steps + startTime
     });
   });
+
+  // ===========================================================================
+  // Priority and Ordering
+  // ===========================================================================
 
   describe('Priority and ordering', () => {
     it('should process workflows in order they become ready', async () => {
@@ -207,16 +212,14 @@ describe('Background Processing Integration', () => {
         activities: [trackActivity('3')],
       });
 
-      const engine = await createEngine();
-
       // Start in order
-      await engine.start(workflow1, { input: {} });
-      await engine.start(workflow2, { input: {} });
-      await engine.start(workflow3, { input: {} });
+      await ctx.engine.start(workflow1, { input: {} });
+      await ctx.engine.start(workflow2, { input: {} });
+      await ctx.engine.start(workflow3, { input: {} });
 
       // Process all
       for (let i = 0; i < 5; i++) {
-        await engine.tick();
+        await ctx.engine.tick();
       }
 
       // All should complete
@@ -226,14 +229,18 @@ describe('Background Processing Integration', () => {
     });
   });
 
+  // ===========================================================================
+  // Resource-Aware Processing
+  // ===========================================================================
+
   describe('Resource-aware processing', () => {
     it('should respect battery-based conditions', async () => {
       let executed = false;
 
       const batteryAware = defineActivity({
         name: 'batteryAware',
-        runWhen: (ctx) => {
-          const batteryLevel = ctx.batteryLevel as number;
+        runWhen: (actCtx) => {
+          const batteryLevel = actCtx.batteryLevel as number;
           if (batteryLevel < 0.2) {
             return { ready: false, reason: 'Battery too low' };
           }
@@ -250,20 +257,18 @@ describe('Background Processing Integration', () => {
         activities: [batteryAware],
       });
 
-      const engine = await createEngine();
-
       // Low battery
-      environment.setBatteryLevel(0.1);
-      await engine.start(workflow, { input: {} });
+      ctx.environment.setBatteryLevel(0.1);
+      await ctx.engine.start(workflow, { input: {} });
 
-      await engine.tick();
+      await ctx.engine.tick();
       expect(executed).toBe(false);
 
       // Charge up
-      environment.setBatteryLevel(0.5);
-      clock.advance(35000);
+      ctx.environment.setBatteryLevel(0.5);
+      ctx.clock.advance(35000);
 
-      await engine.tick();
+      await ctx.engine.tick();
       expect(executed).toBe(true);
     });
 
@@ -273,7 +278,7 @@ describe('Background Processing Integration', () => {
       const stateAware = defineActivity({
         name: 'stateAware',
         execute: async () => {
-          executions.push({ appState: environment.getAppState() });
+          executions.push({ appState: ctx.environment.getAppState() });
           return { recorded: true };
         },
       });
@@ -283,23 +288,25 @@ describe('Background Processing Integration', () => {
         activities: [stateAware],
       });
 
-      const engine = await createEngine();
-
       // Active
-      environment.setAppState('active');
-      await engine.start(workflow, { input: {} });
-      await engine.tick();
+      ctx.environment.setAppState('active');
+      await ctx.engine.start(workflow, { input: {} });
+      await ctx.engine.tick();
 
       // Background
-      environment.setAppState('background');
-      await engine.start(workflow, { input: {} });
-      await engine.tick();
+      ctx.environment.setAppState('background');
+      await ctx.engine.start(workflow, { input: {} });
+      await ctx.engine.tick();
 
       expect(executions).toHaveLength(2);
       expect(executions[0].appState).toBe('active');
       expect(executions[1].appState).toBe('background');
     });
   });
+
+  // ===========================================================================
+  // Tick Behavior
+  // ===========================================================================
 
   describe('Tick behavior', () => {
     it('should process multiple ready tasks in single tick', async () => {
@@ -319,15 +326,13 @@ describe('Background Processing Integration', () => {
         activities: [quick('a')],
       });
 
-      const engine = await createEngine();
-
       // Start multiple workflows
-      await engine.start(workflow, { input: {} });
-      await engine.start(workflow, { input: {} });
-      await engine.start(workflow, { input: {} });
+      await ctx.engine.start(workflow, { input: {} });
+      await ctx.engine.start(workflow, { input: {} });
+      await ctx.engine.start(workflow, { input: {} });
 
       // Single tick should process tasks
-      await engine.tick();
+      await ctx.engine.tick();
 
       // At least one should be processed per tick
       expect(processed.length).toBeGreaterThanOrEqual(1);
@@ -344,22 +349,25 @@ describe('Background Processing Integration', () => {
         activities: [activity],
       });
 
-      const engine = await createEngine();
-      const execution = await engine.start(workflow, { input: {} });
+      const execution = await ctx.engine.start(workflow, { input: {} });
 
       // Rapid ticks
       await Promise.all([
-        engine.tick(),
-        engine.tick(),
-        engine.tick(),
-        engine.tick(),
-        engine.tick(),
+        ctx.engine.tick(),
+        ctx.engine.tick(),
+        ctx.engine.tick(),
+        ctx.engine.tick(),
+        ctx.engine.tick(),
       ]);
 
-      const result = await engine.getExecution(execution.runId);
+      const result = await ctx.engine.getExecution(execution.runId);
       expect(result?.status).toBe('completed');
     });
   });
+
+  // ===========================================================================
+  // Error Resilience
+  // ===========================================================================
 
   describe('Error resilience', () => {
     it('should continue processing other workflows when one fails', async () => {
@@ -393,15 +401,13 @@ describe('Background Processing Integration', () => {
         activities: [failActivity],
       });
 
-      const engine = await createEngine();
-
-      await engine.start(successWorkflow, { input: {} });
-      await engine.start(failWorkflow, { input: {} });
-      await engine.start(successWorkflow, { input: {} });
+      await ctx.engine.start(successWorkflow, { input: {} });
+      await ctx.engine.start(failWorkflow, { input: {} });
+      await ctx.engine.start(successWorkflow, { input: {} });
 
       // Process all
       for (let i = 0; i < 10; i++) {
-        await engine.tick();
+        await ctx.engine.tick();
       }
 
       expect(results['a']).toBe('success');
@@ -427,27 +433,25 @@ describe('Background Processing Integration', () => {
         },
       });
 
-      const engine = await createEngine();
-      const execution = await engine.start(workflow, { input: {} });
+      const execution = await ctx.engine.start(workflow, { input: {} });
 
-      await engine.tick();
+      await ctx.engine.tick();
 
-      const result = await engine.getExecution(execution.runId);
+      const result = await ctx.engine.getExecution(execution.runId);
       expect(result?.status).toBe('completed');
       expect(workflowCompleted).toBe(true);
     });
   });
 
+  // ===========================================================================
+  // Engine Lifecycle
+  // ===========================================================================
+
   describe('Engine lifecycle', () => {
     it('should stop processing after stop() is called', async () => {
-      let executionCount = 0;
-
       const activity = defineActivity({
         name: 'count',
-        execute: async () => {
-          executionCount++;
-          return { count: executionCount };
-        },
+        execute: async () => ({ count: 1 }),
       });
 
       const workflow = defineWorkflow({
@@ -455,17 +459,12 @@ describe('Background Processing Integration', () => {
         activities: [activity],
       });
 
-      const engine = await createEngine();
-      await engine.start(workflow, { input: {} });
+      await ctx.engine.start(workflow, { input: {} });
 
-      engine.stop();
+      ctx.engine.stop();
 
       // Tick after stop should not throw
-      await engine.tick();
-
-      // But should not process (engine is stopped)
-      // Note: The exact behavior depends on engine implementation
-      // This test documents expected behavior
+      await ctx.engine.tick();
     });
 
     it('should emit events during processing', async () => {
@@ -482,18 +481,17 @@ describe('Background Processing Integration', () => {
       });
 
       // Create engine with onEvent callback
-      const engine = await WorkflowEngine.create({
-        storage,
-        clock,
-        scheduler,
-        environment,
-        onEvent: (event) => {
-          events.push({ type: event.type, runId: event.runId });
+      const eventCtx = await createTestContext({
+        onEvent: (event: unknown) => {
+          const e = event as { type: string; runId?: string };
+          events.push({ type: e.type, runId: e.runId });
         },
       });
 
-      const execution = await engine.start(workflow, { input: {} });
-      await engine.tick();
+      const execution = await eventCtx.engine.start(workflow, { input: {} });
+      await eventCtx.engine.tick();
+
+      eventCtx.engine.stop();
 
       expect(events.some((e) => e.type === 'activity:started')).toBe(true);
       expect(events.some((e) => e.type === 'activity:completed')).toBe(true);

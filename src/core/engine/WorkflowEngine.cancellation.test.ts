@@ -1,5 +1,16 @@
 /**
- * Tests for WorkflowEngine - Cancellation Propagation
+ * Unit Test: WorkflowEngine - Cancellation
+ *
+ * Tests workflow cancellation and its propagation through the system.
+ * Validates that cancelled workflows stop processing and that
+ * in-progress activities handle cancellation gracefully.
+ *
+ * Key scenarios tested:
+ * - Cancel running workflow execution
+ * - Cancel waiting/gated workflow
+ * - Prevent cancelled tasks from running
+ * - Cancellation during activity execution
+ * - onCancel callback invocation
  */
 
 import { WorkflowEngine } from './WorkflowEngine';

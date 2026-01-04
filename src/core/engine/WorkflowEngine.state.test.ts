@@ -1,5 +1,17 @@
 /**
- * Tests for WorkflowEngine - State Threading
+ * Unit Test: WorkflowEngine - State Threading
+ *
+ * Tests how state flows through workflow activities.
+ * Validates that activity results are properly merged into
+ * execution state and available to subsequent activities.
+ *
+ * Key scenarios tested:
+ * - Input preservation through workflow
+ * - Activity result merging (shallow merge)
+ * - State accumulation across activities
+ * - Handling null/undefined/empty returns
+ * - Large payload handling
+ * - Special characters in state
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
@@ -7,7 +19,6 @@ import { WorkflowEngine } from './WorkflowEngine';
 import { InMemoryStorage } from '../storage';
 import { MockClock, MockScheduler, MockEnvironment } from '../mocks';
 import { defineActivity, defineWorkflow } from '../definitions';
-import { runUntilComplete } from '../../../tests/utils/testHelpers';
 
 describe('WorkflowEngine - State Threading', () => {
   let storage: InMemoryStorage;
@@ -144,7 +155,10 @@ describe('WorkflowEngine - State Threading', () => {
       const engine = await createEngine();
       engine.registerWorkflow(workflow);
       const execution = await engine.start(workflow, { input: {} });
-      await runUntilComplete(engine, execution.runId);
+
+      // Run both activities
+      await engine.tick();
+      await engine.tick();
 
       const result = await engine.getExecution(execution.runId);
       expect(result?.state.status).toBe('uploaded');
@@ -211,7 +225,11 @@ describe('WorkflowEngine - State Threading', () => {
       const execution = await engine.start(workflow, {
         input: { initial: 'data' },
       });
-      await runUntilComplete(engine, execution.runId);
+
+      // Run all three activities
+      await engine.tick();
+      await engine.tick();
+      await engine.tick();
 
       const result = await engine.getExecution(execution.runId);
       expect(result?.state).toEqual({

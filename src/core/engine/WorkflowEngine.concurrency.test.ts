@@ -1,5 +1,15 @@
 /**
- * Tests for WorkflowEngine - Concurrency Safety
+ * Unit Test: WorkflowEngine - Concurrency Safety
+ *
+ * Tests engine behavior under concurrent operations to ensure
+ * thread-safety and prevent race conditions.
+ *
+ * Key scenarios tested:
+ * - Concurrent workflow starts
+ * - Parallel tick() calls
+ * - Concurrent activity executions
+ * - Race condition prevention
+ * - Atomic state updates
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';

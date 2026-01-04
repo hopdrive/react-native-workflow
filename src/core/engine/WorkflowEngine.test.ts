@@ -1,5 +1,15 @@
 /**
- * Tests for WorkflowEngine - Phase 1: Happy Path
+ * Unit Test: WorkflowEngine - Core Operations
+ *
+ * Tests basic workflow engine functionality including registration,
+ * execution, and state management.
+ *
+ * Key scenarios tested:
+ * - Workflow and activity registration
+ * - Starting workflow executions
+ * - Activity execution and state merging
+ * - UniqueKey constraint enforcement
+ * - Basic error handling
  */
 
 import { WorkflowEngine } from './WorkflowEngine';

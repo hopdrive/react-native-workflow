@@ -1,5 +1,15 @@
 /**
- * Tests for WorkflowEngine - Phase 3: Retries + Backoff
+ * Unit Test: WorkflowEngine - Retries and Backoff
+ *
+ * Tests the retry mechanism for failed activities including
+ * exponential backoff and maximum attempt limits.
+ *
+ * Key scenarios tested:
+ * - Automatic retry on activity failure
+ * - Exponential backoff between retry attempts
+ * - Maximum interval capping
+ * - Maximum attempts enforcement
+ * - Successful recovery after transient failures
  */
 
 import { WorkflowEngine } from './WorkflowEngine';

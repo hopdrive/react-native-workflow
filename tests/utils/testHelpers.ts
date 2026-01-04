@@ -1,5 +1,32 @@
 /**
- * Test utilities for workflow engine testing.
+ * Test Utilities for Workflow Engine
+ *
+ * This module provides shared utilities for testing the workflow engine.
+ * All test files should import from here for consistent test setup.
+ *
+ * ## Quick Start
+ *
+ * ```typescript
+ * import { createTestContext, runToCompletion } from '../../../tests/utils/testHelpers';
+ *
+ * describe('MyTest', () => {
+ *   let ctx: TestContext;
+ *
+ *   beforeEach(async () => {
+ *     ctx = await createTestContext();
+ *   });
+ *
+ *   afterEach(() => {
+ *     ctx.engine.stop();
+ *   });
+ *
+ *   it('should work', async () => {
+ *     const execution = await ctx.engine.start(myWorkflow, { input: {} });
+ *     await runToCompletion(ctx, execution.runId);
+ *     // assertions...
+ *   });
+ * });
+ * ```
  */
 
 import { WorkflowEngine } from '../../src/core/engine';
@@ -8,59 +35,121 @@ import { InMemoryStorage } from '../../src/core/storage';
 import { MockClock, MockScheduler, MockEnvironment } from '../../src/core/mocks';
 import { defineActivity } from '../../src/core/definitions';
 
+// =============================================================================
+// Test Context
+// =============================================================================
+
 /**
- * Options for creating a test engine.
+ * A test context containing all dependencies needed for testing.
+ * Using a context object avoids repetitive setup and ensures
+ * consistent dependency injection across tests.
  */
-export interface TestEngineOptions {
-  storage?: InMemoryStorage;
-  clock?: MockClock;
-  scheduler?: MockScheduler;
-  environment?: MockEnvironment;
-  isConnected?: boolean;
-  batteryLevel?: number;
+export interface TestContext {
+  /** In-memory storage for test isolation */
+  storage: InMemoryStorage;
+  /** Mock clock for deterministic time control */
+  clock: MockClock;
+  /** Mock scheduler for testing scheduled tasks */
+  scheduler: MockScheduler;
+  /** Mock environment for connectivity/battery simulation */
+  environment: MockEnvironment;
+  /** The workflow engine instance */
+  engine: WorkflowEngine;
 }
 
 /**
- * Create a test engine with common defaults.
+ * Options for creating a test context.
  */
-export async function createTestEngine(
-  options?: TestEngineOptions
-): Promise<WorkflowEngine> {
-  const storage = options?.storage ?? new InMemoryStorage();
-  const clock = options?.clock ?? new MockClock(1000000);
-  const scheduler = options?.scheduler ?? new MockScheduler(clock);
-  const environment = options?.environment ?? new MockEnvironment({
+export interface TestContextOptions {
+  /** Initial clock time (default: 1000000) */
+  startTime?: number;
+  /** Initial connectivity state (default: true) */
+  isConnected?: boolean;
+  /** Initial battery level 0-1 (default: 1.0) */
+  batteryLevel?: number;
+  /** Custom event handler for engine events */
+  onEvent?: (event: unknown) => void;
+}
+
+/**
+ * Creates a complete test context with all dependencies.
+ *
+ * @example
+ * ```typescript
+ * const ctx = await createTestContext({ isConnected: false });
+ * // Engine starts with no network connectivity
+ * ```
+ */
+export async function createTestContext(
+  options?: TestContextOptions
+): Promise<TestContext> {
+  const storage = new InMemoryStorage();
+  const clock = new MockClock(options?.startTime ?? 1000000);
+  const scheduler = new MockScheduler(clock);
+  const environment = new MockEnvironment({
     isConnected: options?.isConnected ?? true,
-    batteryLevel: options?.batteryLevel,
+    batteryLevel: options?.batteryLevel ?? 1.0,
   });
 
-  return WorkflowEngine.create({
+  const engine = await WorkflowEngine.create({
     storage,
     clock,
     scheduler,
     environment,
+    onEvent: options?.onEvent,
   });
+
+  return { storage, clock, scheduler, environment, engine };
+}
+
+// =============================================================================
+// Execution Helpers
+// =============================================================================
+
+/**
+ * Options for running a workflow to completion.
+ */
+export interface RunOptions {
+  /** Maximum time to wait in ms (default: 5000) */
+  timeout?: number;
+  /** Time between ticks in ms (default: 10) */
+  tickInterval?: number;
+  /** If true, advances mock clock to handle gated activities */
+  advanceClock?: boolean;
 }
 
 /**
- * Run engine until workflow completes, fails, or times out.
+ * Runs the engine until a workflow completes, fails, or is cancelled.
+ *
+ * @param ctx - The test context
+ * @param runId - The workflow execution ID
+ * @param options - Execution options
+ * @returns The final execution state
+ * @throws If the workflow doesn't complete within the timeout
+ *
+ * @example
+ * ```typescript
+ * const execution = await ctx.engine.start(workflow, { input: {} });
+ * const result = await runToCompletion(ctx, execution.runId);
+ * expect(result.status).toBe('completed');
+ * ```
  */
-export async function runUntilComplete(
-  engine: WorkflowEngine,
+export async function runToCompletion(
+  ctx: TestContext,
   runId: string,
-  options?: { timeout?: number; tickInterval?: number; clock?: MockClock }
+  options?: RunOptions
 ): Promise<WorkflowExecution> {
-  const { timeout = 5000, tickInterval = 10, clock } = options ?? {};
+  const { timeout = 5000, tickInterval = 10, advanceClock = false } = options ?? {};
   const start = Date.now();
 
   while (Date.now() - start < timeout) {
-    // Advance mock clock if provided (for gated activities)
-    if (clock) {
-      clock.advance(35000); // Advance past default 30s gating delay
+    // Advance mock clock if needed (for gated activities)
+    if (advanceClock) {
+      ctx.clock.advance(35000); // Past default 30s gating delay
     }
 
-    await engine.tick();
-    const execution = await engine.getExecution(runId);
+    await ctx.engine.tick();
+    const execution = await ctx.engine.getExecution(runId);
 
     if (!execution) {
       throw new Error(`Execution ${runId} not found`);
@@ -76,15 +165,25 @@ export async function runUntilComplete(
   throw new Error(`Workflow ${runId} did not complete within ${timeout}ms`);
 }
 
+// =============================================================================
+// Activity Factories
+// =============================================================================
+
 /**
  * Options for creating a test activity.
  */
 export interface TestActivityOptions {
+  /** Custom execute function */
   execute?: (ctx: ActivityContext) => Promise<Record<string, unknown>>;
+  /** If true, activity always throws */
   shouldFail?: boolean;
+  /** Fail until this attempt number (1-indexed), then succeed */
   failUntilAttempt?: number;
+  /** Delay execution by this many ms */
   delay?: number;
+  /** Activity timeout in ms */
   startToCloseTimeout?: number;
+  /** Retry configuration */
   retry?: {
     maximumAttempts?: number;
     initialInterval?: number;
@@ -94,7 +193,28 @@ export interface TestActivityOptions {
 }
 
 /**
- * Create a simple test activity.
+ * Creates a simple test activity with configurable behavior.
+ *
+ * @param name - Activity name
+ * @param options - Activity options
+ * @returns A configured activity definition
+ *
+ * @example
+ * ```typescript
+ * // Simple activity
+ * const simple = createTestActivity('process');
+ *
+ * // Activity that fails twice then succeeds
+ * const flaky = createTestActivity('upload', {
+ *   failUntilAttempt: 3,
+ *   retry: { maximumAttempts: 5 }
+ * });
+ *
+ * // Activity with custom logic
+ * const custom = createTestActivity('transform', {
+ *   execute: async (ctx) => ({ result: ctx.input.value * 2 })
+ * });
+ * ```
  */
 export function createTestActivity(
   name: string,
@@ -133,15 +253,30 @@ export function createTestActivity(
   });
 }
 
+// =============================================================================
+// Utility Functions
+// =============================================================================
+
 /**
- * Sleep utility.
+ * Sleep for a specified duration.
+ *
+ * @param ms - Duration in milliseconds
  */
 export function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 /**
- * Wait for condition to be true.
+ * Wait for a condition to become true.
+ *
+ * @param condition - Function that returns true when condition is met
+ * @param options - Wait options
+ * @throws If condition is not met within timeout
+ *
+ * @example
+ * ```typescript
+ * await waitFor(() => results.length > 0, { timeout: 1000 });
+ * ```
  */
 export async function waitFor(
   condition: () => boolean | Promise<boolean>,
@@ -158,22 +293,4 @@ export async function waitFor(
   }
 
   throw new Error(`Condition not met within ${timeout}ms`);
-}
-
-/**
- * Create test dependencies (clock, scheduler, environment).
- */
-export function createTestDeps(options?: {
-  startTime?: number;
-  isConnected?: boolean;
-  batteryLevel?: number;
-}) {
-  const clock = new MockClock(options?.startTime ?? 1000000);
-  const scheduler = new MockScheduler(clock);
-  const environment = new MockEnvironment({
-    isConnected: options?.isConnected ?? true,
-    batteryLevel: options?.batteryLevel,
-  });
-
-  return { clock, scheduler, environment };
 }

@@ -1,5 +1,15 @@
 /**
- * Tests for WorkflowEngine - Phase 4: runWhen Gating
+ * Unit Test: WorkflowEngine - Activity Gating (runWhen)
+ *
+ * Tests the conditional execution system where activities can
+ * specify runtime conditions that must be met before execution.
+ *
+ * Key scenarios tested:
+ * - Network connectivity conditions (whenConnected)
+ * - Custom runWhen predicates
+ * - Scheduled retry when conditions not met
+ * - Context available in runWhen (battery level, app state)
+ * - Dynamic condition evaluation
  */
 
 import { WorkflowEngine } from './WorkflowEngine';

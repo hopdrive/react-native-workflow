@@ -1,5 +1,15 @@
 /**
- * Tests for WorkflowEngine - Activity Timeout Handling
+ * Unit Test: WorkflowEngine - Timeouts
+ *
+ * Tests activity timeout enforcement and handling.
+ * Validates that long-running activities are properly interrupted
+ * and retried or failed based on configuration.
+ *
+ * Key scenarios tested:
+ * - Activity startToCloseTimeout enforcement
+ * - Timeout triggers retry (if attempts remaining)
+ * - Timeout leads to failure (if no retries left)
+ * - Timeout error message capture
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';

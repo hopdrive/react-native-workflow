@@ -1,74 +1,102 @@
 /**
- * Integration Test - Crash Recovery
- * Tests workflow recovery after simulated crashes/restarts.
+ * Integration Test: Crash Recovery
+ *
+ * Tests workflow recovery after simulated app crashes/restarts.
+ * Validates that the engine can resume workflows from persistent storage
+ * without losing progress or duplicating work.
+ *
+ * Key scenarios tested:
+ * - Resume from last completed activity
+ * - State preservation through crash
+ * - Recovery with gated activities
+ * - Recovery with retries in progress
+ * - Multiple workflow recovery
+ * - UniqueKey constraint preservation
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { WorkflowEngine } from '../../src/core/engine';
 import { InMemoryStorage } from '../../src/core/storage';
 import { MockClock, MockScheduler, MockEnvironment } from '../../src/core/mocks';
 import { defineActivity, defineWorkflow } from '../../src/core/definitions';
 import { conditions } from '../../src/core/conditions';
-import { runUntilComplete, sleep } from '../utils/testHelpers';
+import { runToCompletion, TestContext } from '../utils/testHelpers';
 
 describe('Crash Recovery Integration', () => {
+  // Shared storage persists across "crashes"
   let storage: InMemoryStorage;
   let clock: MockClock;
-  let scheduler: MockScheduler;
   let environment: MockEnvironment;
+  let ctx: TestContext;
 
-  // Keep track of execution calls
+  // Track activity executions across restarts
   let activityExecutions: { name: string; runId: string; attempt: number }[];
 
   beforeEach(() => {
     storage = new InMemoryStorage();
     clock = new MockClock(1000000);
-    scheduler = new MockScheduler(clock);
     environment = new MockEnvironment({ isConnected: true });
     activityExecutions = [];
   });
 
+  afterEach(() => {
+    ctx?.engine.stop();
+  });
+
+  /**
+   * Creates an engine - simulates app start
+   */
   async function createEngine(): Promise<WorkflowEngine> {
-    return WorkflowEngine.create({
+    const scheduler = new MockScheduler(clock);
+    const engine = await WorkflowEngine.create({
       storage,
       clock,
       scheduler,
       environment,
     });
+    ctx = { storage, clock, scheduler, environment, engine };
+    return engine;
   }
 
-  // Simulate creating a new engine (like after app restart)
+  /**
+   * Simulates app restart - creates new engine with same storage
+   */
   async function restartEngine(): Promise<WorkflowEngine> {
-    // Create new engine with same storage (simulates app restart)
-    const newScheduler = new MockScheduler(clock);
-    return WorkflowEngine.create({
+    const scheduler = new MockScheduler(clock);
+    const engine = await WorkflowEngine.create({
       storage,
       clock,
-      scheduler: newScheduler,
+      scheduler,
       environment,
     });
+    ctx = { storage, clock, scheduler, environment, engine };
+    return engine;
   }
+
+  // ===========================================================================
+  // Activity Definitions
+  // ===========================================================================
 
   const step1 = defineActivity({
     name: 'step1',
-    execute: async (ctx) => {
-      activityExecutions.push({ name: 'step1', runId: ctx.runId, attempt: ctx.attempt });
+    execute: async (actCtx) => {
+      activityExecutions.push({ name: 'step1', runId: actCtx.runId, attempt: actCtx.attempt });
       return { step1: 'done', timestamp: Date.now() };
     },
   });
 
   const step2 = defineActivity({
     name: 'step2',
-    execute: async (ctx) => {
-      activityExecutions.push({ name: 'step2', runId: ctx.runId, attempt: ctx.attempt });
+    execute: async (actCtx) => {
+      activityExecutions.push({ name: 'step2', runId: actCtx.runId, attempt: actCtx.attempt });
       return { step2: 'done', timestamp: Date.now() };
     },
   });
 
   const step3 = defineActivity({
     name: 'step3',
-    execute: async (ctx) => {
-      activityExecutions.push({ name: 'step3', runId: ctx.runId, attempt: ctx.attempt });
+    execute: async (actCtx) => {
+      activityExecutions.push({ name: 'step3', runId: actCtx.runId, attempt: actCtx.attempt });
       return { step3: 'done', timestamp: Date.now() };
     },
   });
@@ -78,13 +106,14 @@ describe('Crash Recovery Integration', () => {
     activities: [step1, step2, step3],
   });
 
+  // ===========================================================================
+  // Test Cases
+  // ===========================================================================
+
   describe('Recovery after crash during activity execution', () => {
     it('should resume workflow from last completed activity', async () => {
       const engine = await createEngine();
-
-      const execution = await engine.start(workflow, {
-        input: { moveId: 123 },
-      });
+      const execution = await engine.start(workflow, { input: { moveId: 123 } });
 
       // Complete first activity
       await engine.tick();
@@ -108,7 +137,7 @@ describe('Crash Recovery Integration', () => {
       expect(activityExecutions.filter((e) => e.name === 'step2')).toHaveLength(1);
 
       // Complete workflow
-      await runUntilComplete(newEngine, execution.runId);
+      await runToCompletion(ctx, execution.runId);
 
       const finalState = await newEngine.getExecution(execution.runId);
       expect(finalState?.status).toBe('completed');
@@ -122,10 +151,7 @@ describe('Crash Recovery Integration', () => {
 
     it('should not lose state accumulated before crash', async () => {
       const engine = await createEngine();
-
-      const execution = await engine.start(workflow, {
-        input: { originalData: 'preserved' },
-      });
+      const execution = await engine.start(workflow, { input: { originalData: 'preserved' } });
 
       // Complete two activities
       await engine.tick(); // step1
@@ -148,17 +174,13 @@ describe('Crash Recovery Integration', () => {
 
     it('should preserve input through crash/restart', async () => {
       const engine = await createEngine();
-
       const complexInput = {
         moveId: 456,
         photos: ['a.jpg', 'b.jpg'],
         metadata: { user: 'test' },
       };
 
-      const execution = await engine.start(workflow, {
-        input: complexInput,
-      });
-
+      const execution = await engine.start(workflow, { input: complexInput });
       await engine.tick();
 
       // Crash and restart
@@ -172,27 +194,24 @@ describe('Crash Recovery Integration', () => {
   });
 
   describe('Recovery with gated activities', () => {
-    const gatedStep = defineActivity({
-      name: 'gatedStep',
-      runWhen: conditions.whenConnected,
-      execute: async (ctx) => {
-        activityExecutions.push({ name: 'gatedStep', runId: ctx.runId, attempt: ctx.attempt });
-        return { gated: 'done' };
-      },
-    });
-
-    const gatedWorkflow = defineWorkflow({
-      name: 'gatedRecovery',
-      activities: [step1, gatedStep, step3],
-    });
-
     it('should resume gated activity after crash when condition is met', async () => {
+      const gatedStep = defineActivity({
+        name: 'gatedStep',
+        runWhen: conditions.whenConnected,
+        execute: async (actCtx) => {
+          activityExecutions.push({ name: 'gatedStep', runId: actCtx.runId, attempt: actCtx.attempt });
+          return { gated: 'done' };
+        },
+      });
+
+      const gatedWorkflow = defineWorkflow({
+        name: 'gatedRecovery',
+        activities: [step1, gatedStep, step3],
+      });
+
       environment.setConnected(false);
       const engine = await createEngine();
-
-      const execution = await engine.start(gatedWorkflow, {
-        input: {},
-      });
+      const execution = await engine.start(gatedWorkflow, { input: {} });
 
       // First activity completes, second is gated
       await engine.tick(); // step1
@@ -217,7 +236,7 @@ describe('Crash Recovery Integration', () => {
       expect(activityExecutions.filter((e) => e.name === 'gatedStep')).toHaveLength(1);
 
       // Complete workflow
-      await runUntilComplete(newEngine, execution.runId);
+      await runToCompletion(ctx, execution.runId);
 
       const finalState = await newEngine.getExecution(execution.runId);
       expect(finalState?.status).toBe('completed');
@@ -227,11 +246,12 @@ describe('Crash Recovery Integration', () => {
   describe('Recovery with retries', () => {
     it('should preserve retry count through crash', async () => {
       let failCount = 0;
+
       const flakyActivity = defineActivity({
         name: 'flaky',
         retry: { maximumAttempts: 5, initialInterval: 100 },
-        execute: async (ctx) => {
-          activityExecutions.push({ name: 'flaky', runId: ctx.runId, attempt: ctx.attempt });
+        execute: async (actCtx) => {
+          activityExecutions.push({ name: 'flaky', runId: actCtx.runId, attempt: actCtx.attempt });
           failCount++;
           if (failCount < 3) {
             throw new Error('Transient failure');
@@ -310,13 +330,13 @@ describe('Crash Recovery Integration', () => {
       const exec1 = await engine.start(workflow, { input: { id: 1 } });
       const exec2 = await engine.start(workflow, { input: { id: 2 } });
 
-      // Process just one task (either exec1 or exec2 step1)
+      // Process just one task
       await engine.tick();
 
       const state1Before = await engine.getExecution(exec1.runId);
       const state2Before = await engine.getExecution(exec2.runId);
 
-      // At least one should still be running (or both if only one tick processed one task)
+      // At least one should still be running
       const runningCount = [state1Before, state2Before].filter((s) => s?.status === 'running').length;
       expect(runningCount).toBeGreaterThanOrEqual(1);
 
@@ -334,11 +354,8 @@ describe('Crash Recovery Integration', () => {
       const result1 = await newEngine.getExecution(exec1.runId);
       const result2 = await newEngine.getExecution(exec2.runId);
 
-      // Both should complete after recovery
       expect(result1?.status).toBe('completed');
       expect(result2?.status).toBe('completed');
-
-      // Verify final state includes all steps
       expect(result1?.state).toMatchObject({ step1: 'done', step2: 'done', step3: 'done' });
       expect(result2?.state).toMatchObject({ step1: 'done', step2: 'done', step3: 'done' });
     });
@@ -348,11 +365,7 @@ describe('Crash Recovery Integration', () => {
     it('should maintain uniqueKey constraint through crash', async () => {
       const engine = await createEngine();
 
-      await engine.start(workflow, {
-        input: {},
-        uniqueKey: 'preserved-key',
-      });
-
+      await engine.start(workflow, { input: {}, uniqueKey: 'preserved-key' });
       await engine.tick();
 
       // Crash
@@ -363,10 +376,7 @@ describe('Crash Recovery Integration', () => {
 
       // Should still prevent duplicate
       await expect(
-        newEngine.start(workflow, {
-          input: {},
-          uniqueKey: 'preserved-key',
-        })
+        newEngine.start(workflow, { input: {}, uniqueKey: 'preserved-key' })
       ).rejects.toThrow();
     });
 
@@ -387,7 +397,7 @@ describe('Crash Recovery Integration', () => {
       newEngine.registerWorkflow(workflow);
 
       // Complete workflow
-      await runUntilComplete(newEngine, execution.runId);
+      await runToCompletion(ctx, execution.runId);
 
       // Should now allow same key
       const newExec = await newEngine.start(workflow, {
@@ -402,10 +412,9 @@ describe('Crash Recovery Integration', () => {
   describe('Completed and failed workflow recovery', () => {
     it('should not re-process completed workflows after restart', async () => {
       const engine = await createEngine();
-
       const execution = await engine.start(workflow, { input: {} });
-      await runUntilComplete(engine, execution.runId);
 
+      await runToCompletion(ctx, execution.runId);
       const executionsBefore = activityExecutions.length;
 
       // Crash
