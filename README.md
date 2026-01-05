@@ -1903,7 +1903,7 @@ graph TD
     subgraph "Application Layer"
         UI[React Native UI]
         Def[Workflow Definitions]
-        Hooks[React Hooks (useExecution)]
+        Hooks[React Hooks useExecution]
     end
 
     subgraph "Workflow Engine"
