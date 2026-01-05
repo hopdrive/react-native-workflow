@@ -843,7 +843,33 @@ defineActivity({
 
 Activities receive accumulated state and return additions to it. This is how data flows through a workflow.
 
-![State Threading Model](./assets/State%20Threading%20Model.svg)
+```mermaid
+sequenceDiagram
+    participant Engine
+    participant Act1 as CapturePhoto
+    participant Act2 as UploadPhoto
+    participant State as Workflow State
+
+    Note over Engine, State: Initial Input: { moveId: 123, uri: 'file://img.jpg' }
+
+    Engine->>Act1: Execute(Input)
+    activate Act1
+    Act1-->>Engine: Return { hash: 'abc-123' }
+    deactivate Act1
+
+    Engine->>State: Shallow Merge Result
+    Note over State: State: { moveId: 123, uri: '...', hash: 'abc-123' }
+
+    Engine->>Act2: Execute(State)
+    activate Act2
+    Act2-->>Engine: Return { s3Key: 'key-xyz' }
+    deactivate Act2
+
+    Engine->>State: Shallow Merge Result
+    Note over State: Final State: { moveId: 123, ... , s3Key: 'key-xyz' }
+
+    Engine->>Engine: Check for next activity...
+```
 
 ### How State Flows
 
@@ -904,30 +930,33 @@ execute: async (ctx) => {
 
 ### Activity Task Lifecycle
 
-![Activity Lifecycle State Machine](./assets/Activity%20Lifecycle%20State%20Machine.svg)
 
-```
-                    ┌──────────────────────────────────────────┐
-                    │          (retry backoff)                 │
-                    ▼                                          │
-┌─────────┐    ┌─────────┐    ┌─────────┐    ┌─────────┐      │
-│ PENDING │───▶│ ACTIVE  │───▶│COMPLETED│    │ FAILED  │      │
-└─────────┘    └─────────┘    └─────────┘    └─────────┘      │
-     │              │                             ▲           │
-     │              │         ┌─────────┐         │           │
-     │              └────────▶│ SKIPPED │─────────┼───────────┘
-     │            (runWhen    └─────────┘   (retry later)
-     │             false)          │
-     │                             │
-     │                             ▼
-     │                    (max skips exceeded)
-     │                             │
-     └─────────────────────────────┼───────────────────────────┐
-                                   │                           │
-                                   ▼                           ▼
-                             ┌─────────┐                 ┌─────────┐
-                             │ FAILED  │                 │CANCELLED│
-                             └─────────┘                 └─────────┘
+```mermaid
+stateDiagram-v2
+    [*] --> PENDING
+
+    PENDING --> ACTIVE: Engine picks up task
+    PENDING --> SKIPPED: runWhen == false
+    PENDING --> CANCELLED: Workflow Cancelled
+
+    state ACTIVE {
+        [*] --> Executing
+        Executing --> Timeout: Limit Exceeded
+        Executing --> Error: Exception Thrown
+        Executing --> Success: Function Returns
+    }
+
+    SKIPPED --> PENDING: Retry Timer Elapsed
+    SKIPPED --> FAILED: Max Skips Exceeded
+
+    ACTIVE --> COMPLETED: Success
+    ACTIVE --> PENDING: Error/Timeout (Retries > 0)
+    ACTIVE --> FAILED: Error/Timeout (Retries == 0)
+    ACTIVE --> CANCELLED: Signal Aborted
+
+    FAILED --> [*]: Moved to Dead Letter Queue
+    COMPLETED --> [*]: Next Activity Scheduled
+    CANCELLED --> [*]
 ```
 
 ### State Transitions
@@ -947,18 +976,15 @@ execute: async (ctx) => {
 
 ### Workflow Execution Lifecycle
 
-```
-┌─────────┐    ┌─────────┐
-│ RUNNING │───▶│COMPLETED│
-└─────────┘    └─────────┘
-     │
-     │         ┌───────────┐
-     ├────────▶│ CANCELLED │
-     │         └───────────┘
-     │
-     │         ┌───────────┐
-     └────────▶│  FAILED   │
-               └───────────┘
+```mermaid
+stateDiagram-v2
+    [*] --> RUNNING
+    RUNNING --> COMPLETED
+    RUNNING --> CANCELLED
+    RUNNING --> FAILED
+    COMPLETED --> [*]
+    CANCELLED --> [*]
+    FAILED --> [*]
 ```
 
 ### Automatic Activity Advancement
@@ -1255,7 +1281,30 @@ const engine = await WorkflowEngine.create({
 
 ## Background Processing
 
-![Background Processing & Persistence](./assets/Background%20Processing%20%26%20Persistence.svg)
+```mermaid
+erDiagram
+    WORKFLOW_EXECUTION ||--|{ ACTIVITY_TASK : contains
+    WORKFLOW_EXECUTION {
+        string runId PK
+        string status
+        int currentActivityIndex
+        json state "Accumulated State"
+    }
+    ACTIVITY_TASK {
+        string taskId PK
+        string runId FK
+        string status
+        int attempts
+        string error
+    }
+    DEAD_LETTER ||--|| ACTIVITY_TASK : records_failure
+    DEAD_LETTER {
+        string id PK
+        string originalRunId
+        json finalError
+        boolean acknowledged
+    }
+```
 
 ### Integration with OS Background Systems
 
@@ -1849,7 +1898,50 @@ describe.each([
 
 ## Architecture
 
-![High-Level System Architecture](./assets/High-Level%20System%20Architecture.svg)
+```mermaid
+graph TD
+    subgraph "Application Layer"
+        UI[React Native UI]
+        Def[Workflow Definitions]
+        Hooks[React Hooks (useExecution)]
+    end
+
+    subgraph "Workflow Engine"
+        Client[Workflow Client]
+        Registry[Workflow Registry]
+        Poller[Task Poller]
+        Executor[Activity Executor]
+    end
+
+    subgraph "Storage Layer"
+        Adapter[Storage Adapter Interface]
+        SQLite[(SQLite DB)]
+        Mem[(InMemory DB)]
+    end
+
+    %% Interactions
+    UI -->|Start/Cancel| Client
+    Def -->|Register| Registry
+    Hooks -->|Observe| Client
+    Client -->|Manage| Poller
+    Poller -->|Schedule| Executor
+    Executor -->|Run| Def
+
+    %% Persistence
+    Client -->|Read/Write| Adapter
+    Poller -->|Poll| Adapter
+    Executor -->|Persist State| Adapter
+    Adapter -.->|Production| SQLite
+    Adapter -.->|Testing| Mem
+
+    classDef app fill:#e1f5fe,stroke:#01579b,stroke-width:2px;
+    classDef engine fill:#fff3e0,stroke:#e65100,stroke-width:2px;
+    classDef storage fill:#e8f5e9,stroke:#1b5e20,stroke-width:2px;
+
+    class UI,Def,Hooks app;
+    class Client,Registry,Poller,Executor engine;
+    class Adapter,SQLite,Mem storage;
+```
 
 ### System Layers
 
