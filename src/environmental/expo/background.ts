@@ -8,7 +8,8 @@
  * @example
  * ```typescript
  * // In your app's entry point (e.g., index.js or App.tsx)
- * import { registerBackgroundTask, WORKFLOW_BACKGROUND_TASK } from 'endura/environmental/expo';
+ * import { registerBackgroundTask, WORKFLOW_BACKGROUND_TASK, runBackgroundWorkflowTask } from 'endura/environmental/expo';
+ * import { SQLiteStorage, ExpoSqliteDriver } from 'endura/storage/sqlite';
  * import * as TaskManager from 'expo-task-manager';
  * import * as BackgroundFetch from 'expo-background-fetch';
  * import { openDatabaseAsync } from 'expo-sqlite';
@@ -16,8 +17,13 @@
  *
  * // Define the background task
  * TaskManager.defineTask(WORKFLOW_BACKGROUND_TASK, async () => {
+ *   // Create storage
+ *   const driver = await ExpoSqliteDriver.create('workflow.db', openDatabaseAsync);
+ *   const storage = new SQLiteStorage(driver);
+ *   await storage.initialize();
+ *
  *   return await runBackgroundWorkflowTask({
- *     openDatabase: openDatabaseAsync,
+ *     storage,
  *     workflows: [photoWorkflow, syncWorkflow],
  *     lifespan: 25000, // 25 seconds
  *   });
@@ -28,7 +34,7 @@
  * ```
  */
 
-import { Workflow } from '../../core/types';
+import { Storage, Workflow } from '../../core/types';
 import { ExpoWorkflowClient, ExpoWorkflowClientOptions } from './ExpoWorkflowClient';
 
 /**
@@ -51,9 +57,9 @@ export enum BackgroundFetchResult {
  */
 export interface BackgroundTaskOptions {
   /**
-   * The openDatabaseAsync function from expo-sqlite.
+   * Storage adapter instance.
    */
-  openDatabase: ExpoWorkflowClientOptions['openDatabase'];
+  storage: Storage;
 
   /**
    * Workflows to register for background processing.
@@ -104,8 +110,12 @@ export interface BackgroundTaskOptions {
  * @example
  * ```typescript
  * TaskManager.defineTask(WORKFLOW_BACKGROUND_TASK, async () => {
+ *   const driver = await ExpoSqliteDriver.create('workflow.db', openDatabaseAsync);
+ *   const storage = new SQLiteStorage(driver);
+ *   await storage.initialize();
+ *
  *   return await runBackgroundWorkflowTask({
- *     openDatabase: openDatabaseAsync,
+ *     storage,
  *     workflows: [photoWorkflow, syncWorkflow],
  *   });
  * });
@@ -122,7 +132,7 @@ export async function runBackgroundWorkflowTask(
 
     // Create the client
     const client = await ExpoWorkflowClient.create({
-      openDatabase: options.openDatabase,
+      storage: options.storage,
       environment: options.environment,
     });
 

@@ -1,11 +1,11 @@
 /**
  * Expo Workflow Client - Main entry point for Expo apps.
  * Provides a convenient way to create and configure the workflow engine
- * with Expo-specific adapters.
+ * with Expo-specific runtime adapters.
  */
 
 import { WorkflowEngine } from '../../core/engine';
-import { SQLiteStorage, ExpoSqliteDriver, ExpoSQLiteFactory } from '../../storage/sqlite';
+import { Storage } from '../../core/types';
 import { ExpoClock } from './ExpoClock';
 import { ExpoScheduler } from './ExpoScheduler';
 import { ExpoEnvironment, ExpoEnvironmentOptions } from './ExpoEnvironment';
@@ -15,25 +15,19 @@ import { ExpoEnvironment, ExpoEnvironmentOptions } from './ExpoEnvironment';
  */
 export interface ExpoWorkflowClientOptions {
   /**
-   * Name of the SQLite database file.
-   * @default 'workflow.db'
-   */
-  databaseName?: string;
-
-  /**
-   * The openDatabaseAsync function from expo-sqlite.
-   * Required to create the SQLite database.
+   * Storage adapter instance.
    *
-   * @example
+   * @example SQLite
    * ```typescript
+   * import { SQLiteStorage, ExpoSqliteDriver } from 'endura/storage/sqlite';
    * import { openDatabaseAsync } from 'expo-sqlite';
    *
-   * const client = await ExpoWorkflowClient.create({
-   *   openDatabase: openDatabaseAsync,
-   * });
+   * const driver = await ExpoSqliteDriver.create('workflow.db', openDatabaseAsync);
+   * const storage = new SQLiteStorage(driver);
+   * await storage.initialize();
    * ```
    */
-  openDatabase: ExpoSQLiteFactory;
+  storage: Storage;
 
   /**
    * Environment options for network state and battery level.
@@ -53,16 +47,16 @@ export interface ExpoWorkflowClientOptions {
 
 /**
  * Expo Workflow Client.
- * Combines the workflow engine with Expo-specific adapters.
+ * Combines the workflow engine with Expo-specific runtime adapters.
  */
 export class ExpoWorkflowClient {
   readonly engine: WorkflowEngine;
-  readonly storage: SQLiteStorage;
+  readonly storage: Storage;
   readonly environment: ExpoEnvironment;
 
   private constructor(
     engine: WorkflowEngine,
-    storage: SQLiteStorage,
+    storage: Storage,
     environment: ExpoEnvironment
   ) {
     this.engine = engine;
@@ -75,11 +69,19 @@ export class ExpoWorkflowClient {
    *
    * @example
    * ```typescript
+   * import { SQLiteStorage, ExpoSqliteDriver } from 'endura/storage/sqlite';
+   * import { ExpoWorkflowClient } from 'endura/environmental/expo';
    * import { openDatabaseAsync } from 'expo-sqlite';
    * import NetInfo from '@react-native-community/netinfo';
    *
+   * // Create storage
+   * const driver = await ExpoSqliteDriver.create('workflow.db', openDatabaseAsync);
+   * const storage = new SQLiteStorage(driver);
+   * await storage.initialize();
+   *
+   * // Create client
    * const client = await ExpoWorkflowClient.create({
-   *   openDatabase: openDatabaseAsync,
+   *   storage,
    *   environment: {
    *     getNetworkState: async () => {
    *       const state = await NetInfo.fetch();
@@ -96,12 +98,7 @@ export class ExpoWorkflowClient {
    * ```
    */
   static async create(options: ExpoWorkflowClientOptions): Promise<ExpoWorkflowClient> {
-    const databaseName = options.databaseName ?? 'workflow.db';
-
-    // Create the SQLite driver and storage
-    const driver = await ExpoSqliteDriver.create(databaseName, options.openDatabase);
-    const storage = new SQLiteStorage(driver);
-    await storage.initialize();
+    const storage = options.storage;
 
     // Create runtime adapters
     const clock = new ExpoClock();
@@ -161,10 +158,12 @@ export class ExpoWorkflowClient {
    * Close the client and release resources.
    */
   async close(): Promise<void> {
-    await this.storage.close();
+    if ('close' in this.storage && typeof this.storage.close === 'function') {
+      await (this.storage as { close: () => Promise<void> }).close();
+    }
   }
 
-  // Delegate common methods to the engine for convenience
+  // Delegate common methods to the engine
 
   get registerWorkflow() {
     return this.engine.registerWorkflow.bind(this.engine);

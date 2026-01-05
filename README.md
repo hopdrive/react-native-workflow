@@ -99,13 +99,20 @@ export const photoWorkflow = defineWorkflow({
 
 ```typescript
 // App.tsx
+import { SQLiteStorage, ExpoSqliteDriver } from 'endura/storage/sqlite';
 import { ExpoWorkflowClient } from 'endura/environmental/expo';
 import { openDatabaseAsync } from 'expo-sqlite';
 import NetInfo from '@react-native-community/netinfo';
 import { photoWorkflow } from './workflows/photo';
 
+// Create storage
+const driver = await ExpoSqliteDriver.create('workflow.db', openDatabaseAsync);
+const storage = new SQLiteStorage(driver);
+await storage.initialize();
+
+// Create client
 const client = await ExpoWorkflowClient.create({
-  openDatabase: openDatabaseAsync,
+  storage,
   environment: {
     getNetworkState: async () => {
       const state = await NetInfo.fetch();
@@ -516,17 +523,22 @@ interface ActivityTask {
 
 ### ExpoWorkflowClient (Recommended for Expo Apps)
 
-The main entry point for Expo applications:
+The main entry point for Expo applications. Combines the workflow engine with Expo-specific runtime adapters:
 
 ```typescript
+import { SQLiteStorage, ExpoSqliteDriver } from 'endura/storage/sqlite';
 import { ExpoWorkflowClient } from 'endura/environmental/expo';
 import { openDatabaseAsync } from 'expo-sqlite';
 import NetInfo from '@react-native-community/netinfo';
 
+// Create storage (SQLite, Realm, or any Storage implementation)
+const driver = await ExpoSqliteDriver.create('workflow.db', openDatabaseAsync);
+const storage = new SQLiteStorage(driver);
+await storage.initialize();
+
 // Initialize the client
 const client = await ExpoWorkflowClient.create({
-  openDatabase: openDatabaseAsync,
-  databaseName: 'workflow.db', // optional, defaults to 'workflow.db'
+  storage,
 
   environment: {
     getNetworkState: async () => {
@@ -1215,13 +1227,12 @@ interface StorageAdapter {
 SQLite is the production storage backend, providing ACID transactions and efficient querying:
 
 ```typescript
-import { ExpoWorkflowClient } from 'endura/environmental/expo';
+import { SQLiteStorage, ExpoSqliteDriver } from 'endura/storage/sqlite';
 import { openDatabaseAsync } from 'expo-sqlite';
 
-const client = await ExpoWorkflowClient.create({
-  openDatabase: openDatabaseAsync,
-  databaseName: 'workflow.db', // optional
-});
+const driver = await ExpoSqliteDriver.create('workflow.db', openDatabaseAsync);
+const storage = new SQLiteStorage(driver);
+await storage.initialize();
 ```
 
 **Database Schema:**
@@ -1313,6 +1324,7 @@ iOS and Android limit background execution to approximately 30 seconds. The engi
 // background.ts
 import * as TaskManager from 'expo-task-manager';
 import * as BackgroundFetch from 'expo-background-fetch';
+import { SQLiteStorage, ExpoSqliteDriver } from 'endura/storage/sqlite';
 import { ExpoWorkflowClient } from 'endura/environmental/expo';
 import { openDatabaseAsync } from 'expo-sqlite';
 import { photoWorkflow, driverStatusSyncWorkflow } from './workflows';
@@ -1323,8 +1335,13 @@ TaskManager.defineTask(BACKGROUND_TASK_NAME, async () => {
   console.log('Background task starting...');
 
   try {
+    // Create storage
+    const driver = await ExpoSqliteDriver.create('workflow.db', openDatabaseAsync);
+    const storage = new SQLiteStorage(driver);
+    await storage.initialize();
+
     const client = await ExpoWorkflowClient.create({
-      openDatabase: openDatabaseAsync,
+      storage,
       environment: {
         getNetworkState: async () => {
           // Get network state in background
@@ -1382,10 +1399,8 @@ import {
   usePendingActivityCount,
   useDeadLetters
 } from 'endura/react';
-import { ExpoWorkflowClient } from 'endura/environmental/expo';
 
-// You need access to the engine/client instance
-const client = await ExpoWorkflowClient.create({ /* ... */ });
+// You need access to the engine/client instance (see ExpoWorkflowClient setup above)
 
 // Subscribe to a specific workflow execution
 function MyComponent({ runId, engine }) {
@@ -1480,7 +1495,7 @@ function WorkflowProgress({ runId, engine }: { runId: string; engine: WorkflowEn
 
 ```typescript
 const client = await ExpoWorkflowClient.create({
-  openDatabase: openDatabaseAsync,
+  storage,  // Your storage instance
 
   onEvent: (event) => {
     // Send to analytics, crash reporting, etc.
