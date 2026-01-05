@@ -99,7 +99,7 @@ export const photoWorkflow = defineWorkflow({
 
 ```typescript
 // App.tsx
-import { ExpoWorkflowClient } from 'endura/adapters/expo';
+import { ExpoWorkflowClient } from 'endura/environmental/expo';
 import { openDatabaseAsync } from 'expo-sqlite';
 import NetInfo from '@react-native-community/netinfo';
 import { photoWorkflow } from './workflows/photo';
@@ -519,7 +519,7 @@ interface ActivityTask {
 The main entry point for Expo applications:
 
 ```typescript
-import { ExpoWorkflowClient } from 'endura/adapters/expo';
+import { ExpoWorkflowClient } from 'endura/environmental/expo';
 import { openDatabaseAsync } from 'expo-sqlite';
 import NetInfo from '@react-native-community/netinfo';
 
@@ -549,7 +549,7 @@ For non-Expo apps or custom configurations, you can use the engine directly:
 
 ```typescript
 import { WorkflowEngine } from 'endura';
-import { SQLiteStorage, ExpoSqliteDriver } from 'endura/adapters/expo';
+import { SQLiteStorage, ExpoSqliteDriver } from 'endura/storage/sqlite';
 import { openDatabaseAsync } from 'expo-sqlite';
 
 // Create SQLite storage
@@ -1215,7 +1215,7 @@ interface StorageAdapter {
 SQLite is the production storage backend, providing ACID transactions and efficient querying:
 
 ```typescript
-import { ExpoWorkflowClient } from 'endura/adapters/expo';
+import { ExpoWorkflowClient } from 'endura/environmental/expo';
 import { openDatabaseAsync } from 'expo-sqlite';
 
 const client = await ExpoWorkflowClient.create({
@@ -1239,7 +1239,8 @@ All data is stored relationally with proper indexes for efficient queries.
 For unit tests and development, use the in-memory storage adapter:
 
 ```typescript
-import { WorkflowEngine, InMemoryStorage } from 'endura';
+import { WorkflowEngine } from 'endura';
+import { InMemoryStorage } from 'endura/storage/memory';
 
 const storage = new InMemoryStorage();
 const engine = await WorkflowEngine.create({
@@ -1312,7 +1313,7 @@ iOS and Android limit background execution to approximately 30 seconds. The engi
 // background.ts
 import * as TaskManager from 'expo-task-manager';
 import * as BackgroundFetch from 'expo-background-fetch';
-import { ExpoWorkflowClient } from 'endura/adapters/expo';
+import { ExpoWorkflowClient } from 'endura/environmental/expo';
 import { openDatabaseAsync } from 'expo-sqlite';
 import { photoWorkflow, driverStatusSyncWorkflow } from './workflows';
 
@@ -1380,8 +1381,8 @@ import {
   useExecutionStats,
   usePendingActivityCount,
   useDeadLetters
-} from 'endura/adapters/expo';
-import { ExpoWorkflowClient } from 'endura/adapters/expo';
+} from 'endura/react';
+import { ExpoWorkflowClient } from 'endura/environmental/expo';
 
 // You need access to the engine/client instance
 const client = await ExpoWorkflowClient.create({ /* ... */ });
@@ -1441,7 +1442,7 @@ function FailureAlerts({ engine }) {
 ### Workflow Progress Component
 
 ```tsx
-import { useExecution } from 'endura/adapters/expo';
+import { useExecution } from 'endura/react';
 import { WorkflowEngine } from 'endura';
 
 function WorkflowProgress({ runId, engine }: { runId: string; engine: WorkflowEngine }) {
@@ -1719,10 +1720,8 @@ The test suite is organized into:
 The library includes comprehensive unit tests for core functionality. Unit tests manually create engine instances with mocked dependencies:
 
 ```typescript
-import { WorkflowEngine } from './WorkflowEngine';
-import { InMemoryStorage } from '../storage';
-import { MockClock, MockScheduler, MockEnvironment } from '../mocks';
-import { defineActivity, defineWorkflow } from '../definitions';
+import { WorkflowEngine, MockClock, MockScheduler, MockEnvironment, defineActivity, defineWorkflow } from 'endura';
+import { InMemoryStorage } from 'endura/storage/memory';
 
 describe('WorkflowEngine', () => {
   let storage: InMemoryStorage;
@@ -1851,7 +1850,7 @@ React hooks are tested using `@testing-library/react-hooks`:
 
 ```typescript
 import { renderHook, waitFor } from '@testing-library/react-hooks';
-import { useExecution } from 'endura/adapters/expo';
+import { useExecution } from 'endura/react';
 
 describe('useExecution', () => {
   it('should return execution data', async () => {
@@ -1870,6 +1869,9 @@ describe('useExecution', () => {
 Each storage adapter should pass the same test suite:
 
 ```typescript
+import { InMemoryStorage } from 'endura/storage/memory';
+import { SQLiteStorage } from 'endura/storage/sqlite';
+
 describe.each([
   ['InMemory', new InMemoryStorage()],
   ['SQLite', new SQLiteStorage(driver)],

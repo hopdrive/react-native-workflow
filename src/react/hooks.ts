@@ -2,11 +2,11 @@
  * React hooks for workflow engine integration.
  *
  * These hooks provide reactive access to workflow state for building UIs.
- * They work with both the core engine and the Expo client.
+ * They work with any storage adapter.
  *
  * @example
  * ```tsx
- * import { useExecution, useDeadLetters } from 'endura/adapters/expo';
+ * import { useExecution, useDeadLetters } from 'endura/react';
  *
  * function WorkflowProgress({ runId }: { runId: string }) {
  *   const execution = useExecution(engine, runId);
@@ -29,8 +29,8 @@ import {
   WorkflowExecutionStatus,
   DeadLetterRecord,
   Storage,
-} from '../../core/types';
-import { WorkflowEngine } from '../../core/engine';
+} from '../core/types';
+import { WorkflowEngine } from '../core/engine';
 
 /**
  * Hook to subscribe to a workflow execution.

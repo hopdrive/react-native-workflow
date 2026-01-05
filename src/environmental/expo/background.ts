@@ -8,7 +8,7 @@
  * @example
  * ```typescript
  * // In your app's entry point (e.g., index.js or App.tsx)
- * import { registerBackgroundTask, WORKFLOW_BACKGROUND_TASK } from 'endura/adapters/expo';
+ * import { registerBackgroundTask, WORKFLOW_BACKGROUND_TASK } from 'endura/environmental/expo';
  * import * as TaskManager from 'expo-task-manager';
  * import * as BackgroundFetch from 'expo-background-fetch';
  * import { openDatabaseAsync } from 'expo-sqlite';

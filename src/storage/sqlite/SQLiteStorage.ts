@@ -12,8 +12,8 @@ import {
   ActivityTaskStatus,
   DeadLetterRecord,
 } from '../../core/types';
-import { SQLiteDriver, SQLiteRow } from './SQLiteDriver';
-import { getSchemaStatements, SCHEMA_VERSION } from './schema';
+import { SQLiteDriver, SQLiteRow } from './internal/SQLiteDriver';
+import { getSchemaStatements, SCHEMA_VERSION } from './internal/schema';
 
 /**
  * SQLite-based storage adapter.

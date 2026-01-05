@@ -10,7 +10,7 @@ import {
   ActivityTask,
   ActivityTaskStatus,
   DeadLetterRecord,
-} from '../types';
+} from '../../core/types';
 
 export class InMemoryStorage implements Storage {
   private executions = new Map<string, WorkflowExecution>();

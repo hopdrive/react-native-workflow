@@ -58,9 +58,6 @@ export { defineActivity, defineWorkflow, DefineActivityOptions, DefineWorkflowOp
 // Conditions
 export { conditions, always, whenConnected, whenDisconnected, afterDelay, all, any, not } from './conditions';
 
-// Storage
-export { InMemoryStorage } from './storage';
-
 // Engine
 export { WorkflowEngine } from './engine';
 

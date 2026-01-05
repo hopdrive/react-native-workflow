@@ -13,7 +13,7 @@
  */
 
 import { WorkflowEngine } from '../../../../src/core/engine/WorkflowEngine';
-import { InMemoryStorage } from '../../../../src/core/storage';
+import { InMemoryStorage } from '../../../../src/storage/memory';
 import { MockClock, MockScheduler, MockEnvironment } from '../../../../src/core/mocks';
 import { defineActivity, defineWorkflow } from '../../../../src/core/definitions';
 import { ActivityTask } from '../../../../src/core/types';

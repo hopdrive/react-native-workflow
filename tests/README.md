@@ -28,10 +28,12 @@ src/core/engine/          # Unit tests (colocated with source)
 ├── WorkflowEngine.validation.test.ts # Input validation
 └── WorkflowEngine.state.test.ts     # State threading
 
-src/adapters/expo/
-├── hooks.test.tsx        # React hooks tests
+tests/unit/
+├── react/
+│   └── hooks.test.tsx        # React hooks tests
 └── storage/
-    └── SQLiteStorage.test.ts # SQLite storage tests
+    └── sqlite/
+        └── SQLiteStorage.test.ts # SQLite storage tests
 ```
 
 ## Running Tests
@@ -77,7 +79,7 @@ engine features together.
 - **CrashRecovery**: Recovery after simulated app crashes
 - **BackgroundProcessing**: Scheduled tasks and long-running workflows
 
-### React Hooks Tests (`src/adapters/expo/hooks.test.tsx`)
+### React Hooks Tests (`tests/unit/react/hooks.test.tsx`)
 
 Tests for React integration hooks using jsdom environment:
 - `useExecution` - Subscribe to execution state
@@ -187,10 +189,10 @@ Background task scheduling (integrates with MockClock).
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
-import { WorkflowEngine } from './WorkflowEngine';
-import { InMemoryStorage } from '../storage';
-import { MockClock, MockScheduler, MockEnvironment } from '../mocks';
-import { defineActivity, defineWorkflow } from '../definitions';
+import { WorkflowEngine } from '../../../../src/core/engine';
+import { InMemoryStorage } from '../../../../src/storage/memory';
+import { MockClock, MockScheduler, MockEnvironment } from '../../../../src/core/mocks';
+import { defineActivity, defineWorkflow } from '../../../../src/core/definitions';
 
 describe('WorkflowEngine - [Feature]', () => {
   let storage: InMemoryStorage;

@@ -13,9 +13,29 @@
       "import": "./dist/core/index.js",
       "types": "./dist/core/index.d.ts"
     },
-    "./adapters/expo": {
-      "import": "./dist/adapters/expo/index.js",
-      "types": "./dist/adapters/expo/index.d.ts"
+    "./storage": {
+      "import": "./dist/storage/index.js",
+      "types": "./dist/storage/index.d.ts"
+    },
+    "./storage/sqlite": {
+      "import": "./dist/storage/sqlite/index.js",
+      "types": "./dist/storage/sqlite/index.d.ts"
+    },
+    "./storage/memory": {
+      "import": "./dist/storage/memory/index.js",
+      "types": "./dist/storage/memory/index.d.ts"
+    },
+    "./react": {
+      "import": "./dist/react/index.js",
+      "types": "./dist/react/index.d.ts"
+    },
+    "./environmental/expo": {
+      "import": "./dist/environmental/expo/index.js",
+      "types": "./dist/environmental/expo/index.d.ts"
+    },
+    "./testing": {
+      "import": "./dist/testing/index.js",
+      "types": "./dist/testing/index.d.ts"
     }
   },
   "files": [
