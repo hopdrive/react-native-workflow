@@ -3,14 +3,14 @@
  * Uses better-sqlite3 for Node.js testing.
  */
 
-import { SQLiteStorage } from './SQLiteStorage';
-import { BetterSqlite3Driver } from './BetterSqlite3Driver';
+import { SQLiteStorage } from '../../../../src/adapters/expo/SQLiteStorage';
+import { BetterSqlite3Driver } from '../../../../src/adapters/expo/BetterSqlite3Driver';
 import {
   WorkflowExecution,
   ActivityTask,
   DeadLetterRecord,
   StorageChange,
-} from '../../../core/types';
+} from '../../../../src/core/types';
 
 describe('SQLiteStorage', () => {
   let storage: SQLiteStorage;

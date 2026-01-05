@@ -3,7 +3,7 @@
  * Provides runtime context like network connectivity and battery level.
  */
 
-import { Environment, RuntimeContext } from '../../../core/types';
+import { Environment, RuntimeContext } from '../../core/types';
 
 /**
  * Network state provider function type.

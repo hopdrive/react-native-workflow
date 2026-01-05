@@ -12,11 +12,11 @@
  * - Pending task processing after recovery
  */
 
-import { WorkflowEngine } from './WorkflowEngine';
-import { InMemoryStorage } from '../storage';
-import { MockClock, MockScheduler, MockEnvironment } from '../mocks';
-import { defineActivity, defineWorkflow } from '../definitions';
-import { ActivityTask } from '../types';
+import { WorkflowEngine } from '../../../../src/core/engine/WorkflowEngine';
+import { InMemoryStorage } from '../../../../src/core/storage';
+import { MockClock, MockScheduler, MockEnvironment } from '../../../../src/core/mocks';
+import { defineActivity, defineWorkflow } from '../../../../src/core/definitions';
+import { ActivityTask } from '../../../../src/core/types';
 
 describe('WorkflowEngine - Task Lifecycle', () => {
   let storage: InMemoryStorage;

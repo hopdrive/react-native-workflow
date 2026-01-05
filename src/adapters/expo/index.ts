@@ -25,30 +25,22 @@
 export { ExpoWorkflowClient, ExpoWorkflowClientOptions } from './ExpoWorkflowClient';
 
 // Storage
-export {
-  SQLiteStorage,
-  SQLiteDriver,
-  SQLiteRow,
-  SQLiteResult,
-  SQLiteDriverFactory,
-  ExpoSqliteDriver,
-  ExpoSQLiteFactory,
-  getSchemaStatements,
-  SCHEMA_VERSION,
-  // Test utilities
-  BetterSqlite3Driver,
-  createBetterSqlite3Driver,
-} from './storage';
+export { SQLiteStorage } from './SQLiteStorage';
+export { SQLiteDriver, SQLiteRow, SQLiteResult, SQLiteDriverFactory } from './SQLiteDriver';
+export { ExpoSqliteDriver, ExpoSQLiteFactory } from './ExpoSqliteDriver';
+export { getSchemaStatements, SCHEMA_VERSION } from './schema';
+// Test utilities
+export { BetterSqlite3Driver, createBetterSqlite3Driver } from './BetterSqlite3Driver';
 
 // Runtime
+export { ExpoClock } from './ExpoClock';
+export { ExpoScheduler } from './ExpoScheduler';
 export {
-  ExpoClock,
-  ExpoScheduler,
   ExpoEnvironment,
   ExpoEnvironmentOptions,
   NetworkStateProvider,
   BatteryLevelProvider,
-} from './runtime';
+} from './ExpoEnvironment';
 
 // Background
 export {

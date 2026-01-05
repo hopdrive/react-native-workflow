@@ -3,7 +3,7 @@
  * Uses real system time.
  */
 
-import { Clock } from '../../../core/types';
+import { Clock } from '../../core/types';
 
 /**
  * Real clock implementation for production use.

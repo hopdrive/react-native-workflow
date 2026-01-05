@@ -5,8 +5,11 @@
  */
 
 import { WorkflowEngine } from '../../core/engine';
-import { SQLiteStorage, ExpoSqliteDriver, ExpoSQLiteFactory } from './storage';
-import { ExpoClock, ExpoScheduler, ExpoEnvironment, ExpoEnvironmentOptions } from './runtime';
+import { SQLiteStorage } from './SQLiteStorage';
+import { ExpoSqliteDriver, ExpoSQLiteFactory } from './ExpoSqliteDriver';
+import { ExpoClock } from './ExpoClock';
+import { ExpoScheduler } from './ExpoScheduler';
+import { ExpoEnvironment, ExpoEnvironmentOptions } from './ExpoEnvironment';
 
 /**
  * Configuration options for the Expo workflow client.

@@ -12,11 +12,11 @@ import {
   usePendingActivityCount,
   useExecutionStats,
   useWorkflowStarter,
-} from './hooks';
-import { WorkflowEngine } from '../../core/engine';
-import { InMemoryStorage } from '../../core/storage';
-import { MockClock, MockScheduler, MockEnvironment } from '../../core/mocks';
-import { defineActivity, defineWorkflow } from '../../core/definitions';
+} from '../../../../src/adapters/expo/hooks';
+import { WorkflowEngine } from '../../../../src/core/engine';
+import { InMemoryStorage } from '../../../../src/core/storage';
+import { MockClock, MockScheduler, MockEnvironment } from '../../../../src/core/mocks';
+import { defineActivity, defineWorkflow } from '../../../../src/core/definitions';
 
 describe('React Hooks', () => {
   let storage: InMemoryStorage;

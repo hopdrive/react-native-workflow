@@ -14,11 +14,11 @@
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
-import { WorkflowEngine } from './WorkflowEngine';
-import { InMemoryStorage } from '../storage';
-import { MockClock, MockScheduler, MockEnvironment } from '../mocks';
-import { defineActivity, defineWorkflow } from '../definitions';
-import { createTestActivity, sleep } from '../../../tests/utils/testHelpers';
+import { WorkflowEngine } from '../../../../src/core/engine/WorkflowEngine';
+import { InMemoryStorage } from '../../../../src/core/storage';
+import { MockClock, MockScheduler, MockEnvironment } from '../../../../src/core/mocks';
+import { defineActivity, defineWorkflow } from '../../../../src/core/definitions';
+import { createTestActivity, sleep } from '../../../utils/testHelpers';
 
 describe('WorkflowEngine - Callback Error Handling', () => {
   let storage: InMemoryStorage;

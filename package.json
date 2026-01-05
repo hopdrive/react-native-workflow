@@ -18,7 +18,13 @@
       "types": "./dist/adapters/expo/index.d.ts"
     }
   },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
+    "prepublishOnly": "npm run clean && npm run build",
     "build": "tsc",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -37,7 +43,10 @@
     "durable-execution",
     "persistent-workflows"
   ],
-  "author": "",
+  "author": {
+    "name": "Rob Newton",
+    "email": "robbienewton@gmail.com"
+  },
   "license": "MIT",
   "devDependencies": {
     "@testing-library/dom": "^9.3.4",

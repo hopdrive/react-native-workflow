@@ -3,7 +3,7 @@
  * Uses setTimeout/setInterval for scheduling.
  */
 
-import { Scheduler } from '../../../core/types';
+import { Scheduler } from '../../core/types';
 
 /**
  * Real scheduler implementation using setTimeout/setInterval.

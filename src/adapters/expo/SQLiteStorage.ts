@@ -11,7 +11,7 @@ import {
   ActivityTask,
   ActivityTaskStatus,
   DeadLetterRecord,
-} from '../../../core/types';
+} from '../../core/types';
 import { SQLiteDriver, SQLiteRow } from './SQLiteDriver';
 import { getSchemaStatements, SCHEMA_VERSION } from './schema';
 
