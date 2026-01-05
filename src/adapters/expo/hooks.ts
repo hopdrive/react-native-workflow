@@ -6,7 +6,7 @@
  *
  * @example
  * ```tsx
- * import { useExecution, useDeadLetters } from 'react-native-workflow/expo';
+ * import { useExecution, useDeadLetters } from 'endura/adapters/expo';
  *
  * function WorkflowProgress({ runId }: { runId: string }) {
  *   const execution = useExecution(engine, runId);

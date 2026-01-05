@@ -1,5 +1,5 @@
 /**
- * Expo adapter for react-native-workflow.
+ * Expo adapter for endura.
  *
  * This module provides Expo-specific implementations for:
  * - SQLite storage (using expo-sqlite)
@@ -9,7 +9,7 @@
  *
  * @example
  * ```typescript
- * import { ExpoWorkflowClient } from 'react-native-workflow/expo';
+ * import { ExpoWorkflowClient } from 'endura/adapters/expo';
  * import { openDatabaseAsync } from 'expo-sqlite';
  *
  * const client = await ExpoWorkflowClient.create({

@@ -1,6 +1,6 @@
 # Test Suite Documentation
 
-This document describes the test organization for the React Native Workflow Engine.
+This document describes the test organization for endura.
 
 ## Test Structure
 

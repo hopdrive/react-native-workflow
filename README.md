@@ -1,16 +1,16 @@
-![React Native Workflow Engine](./assets/logo.png)
+![Endura](./assets/logo.png)
 
-# React Native Workflow Engine
+# endura
 
-**A "Temporal-lite" for Mobile**
+**Durable execution for React Native.** Inspired by [Temporal](https://temporal.io).
 
-A persistent, offline-first workflow orchestration system for React Native applications. Inspired by [Temporal's](https://temporal.io) conceptual model but designed specifically for embedded, on-device execution.
+Build offline-first workflows that survive app crashes, network failures, and device restarts. Your tasks will endure.
 
-[![npm version](https://badge.fury.io/js/react-native-workflow.svg)](https://badge.fury.io/js/react-native-workflow)
+[![npm version](https://badge.fury.io/js/endura.svg)](https://badge.fury.io/js/endura)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![CI](https://github.com/hopdrive/react-native-workflow/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/hopdrive/react-native-workflow/actions/workflows/ci.yml)
-[![Coverage](https://img.shields.io/badge/coverage-84.63%25-brightgreen)](https://github.com/hopdrive/react-native-workflow)
-[![Tests](https://img.shields.io/badge/tests-266%20passed-success)](https://github.com/hopdrive/react-native-workflow)
+[![CI](https://github.com/hopdrive/endura/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/hopdrive/endura/actions/workflows/ci.yml)
+[![Coverage](https://img.shields.io/badge/coverage-84.63%25-brightgreen)](https://github.com/hopdrive/endura)
+[![Tests](https://img.shields.io/badge/tests-266%20passed-success)](https://github.com/hopdrive/endura)
 
 ---
 
@@ -46,9 +46,9 @@ A persistent, offline-first workflow orchestration system for React Native appli
 ### Installation
 
 ```bash
-npm install react-native-workflow expo-sqlite
+npm install endura expo-sqlite
 # or
-yarn add react-native-workflow expo-sqlite
+yarn add endura expo-sqlite
 ```
 
 ### Define an Activity
@@ -57,7 +57,7 @@ Activities are the building blocks—small, restartable units of work:
 
 ```typescript
 // activities/uploadPhoto.ts
-import { defineActivity, conditions } from 'react-native-workflow';
+import { defineActivity, conditions } from 'endura';
 
 export const uploadPhoto = defineActivity({
   name: 'uploadPhoto',
@@ -82,7 +82,7 @@ Workflows compose activities into a sequence:
 
 ```typescript
 // workflows/photo.ts
-import { defineWorkflow } from 'react-native-workflow';
+import { defineWorkflow } from 'endura';
 import { capturePhoto, uploadPhoto, notifyServer } from './activities';
 
 export const photoWorkflow = defineWorkflow({
@@ -99,7 +99,7 @@ export const photoWorkflow = defineWorkflow({
 
 ```typescript
 // App.tsx
-import { ExpoWorkflowClient } from 'react-native-workflow/expo';
+import { ExpoWorkflowClient } from 'endura/adapters/expo';
 import { openDatabaseAsync } from 'expo-sqlite';
 import NetInfo from '@react-native-community/netinfo';
 import { photoWorkflow } from './workflows/photo';
@@ -216,7 +216,7 @@ We needed to:
 
 1. **Migrate from Realm to SQLite** — Realm's future is uncertain; SQLite is well-supported and provides ACID transactions for crash safety.
 
-2. **Align with industry standards** — Temporal is the gold standard for workflow orchestration. Borrowing its terminology and patterns means developers can transfer knowledge.
+2. **Align with industry standards** — Borrowing terminology and patterns from industry-standard workflow engines means developers can transfer knowledge.
 
 3. **Extract the pattern into a library** — What we built was useful. Others face the same challenges.
 
@@ -228,9 +228,9 @@ We needed to:
 |--------------------|-------------------|-----|
 | Pipeline | Workflow | Industry-standard term for business process |
 | Event | WorkflowExecution | Events should be immutable; executions are mutable |
-| eventId | runId | Matches Temporal terminology |
+| eventId | runId | Industry-standard terminology |
 | Job | ActivityTask (internal) | Users don't interact with internal task records |
-| Worker | Activity | Matches Temporal; cleaner separation |
+| Worker | Activity | Industry-standard terminology; cleaner separation |
 | `completeStage()` | *(automatic)* | Less error-prone; activities just return results |
 
 ---
@@ -271,8 +271,6 @@ Temporal is a powerful distributed system. We're building for mobile, which has 
 - **Task Queues** — Routing/load-balancing across workers. Single-process on mobile.
 
 ### The Key Insight
-
-Temporal's power comes from deterministic replay—recording every decision and replaying them exactly. This requires activities to be pure (no side effects) and workflows to be deterministic.
 
 We take a simpler approach: **activities are small, idempotent, and restartable**. If an activity crashes, restart it from the beginning. This works because we design activities to be safe to re-run.
 
@@ -521,7 +519,7 @@ interface ActivityTask {
 The main entry point for Expo applications:
 
 ```typescript
-import { ExpoWorkflowClient } from 'react-native-workflow/expo';
+import { ExpoWorkflowClient } from 'endura/adapters/expo';
 import { openDatabaseAsync } from 'expo-sqlite';
 import NetInfo from '@react-native-community/netinfo';
 
@@ -550,8 +548,8 @@ const client = await ExpoWorkflowClient.create({
 For non-Expo apps or custom configurations, you can use the engine directly:
 
 ```typescript
-import { WorkflowEngine } from 'react-native-workflow';
-import { SQLiteStorage, ExpoSqliteDriver } from 'react-native-workflow/expo';
+import { WorkflowEngine } from 'endura';
+import { SQLiteStorage, ExpoSqliteDriver } from 'endura/adapters/expo';
 import { openDatabaseAsync } from 'expo-sqlite';
 
 // Create SQLite storage
@@ -620,7 +618,7 @@ await engine.purgeDeadLetters({ olderThanMs: 7 * 24 * 60 * 60 * 1000 });
 Create a workflow definition:
 
 ```typescript
-import { defineWorkflow } from 'react-native-workflow';
+import { defineWorkflow } from 'endura';
 
 export const photoWorkflow = defineWorkflow<PhotoWorkflowInput>({
   name: 'photo',
@@ -652,7 +650,7 @@ interface PhotoWorkflowInput {
 Create an activity definition:
 
 ```typescript
-import { defineActivity } from 'react-native-workflow';
+import { defineActivity } from 'endura';
 
 export const uploadPhoto = defineActivity<UploadInput, UploadOutput>({
   name: 'uploadPhoto',
@@ -761,7 +759,7 @@ interface RunConditionResult {
 ### Built-in Conditions
 
 ```typescript
-import { conditions } from 'react-native-workflow';
+import { conditions } from 'endura';
 
 // Simple conditions
 conditions.always                   // Always ready (default)
@@ -1217,7 +1215,7 @@ interface StorageAdapter {
 SQLite is the production storage backend, providing ACID transactions and efficient querying:
 
 ```typescript
-import { ExpoWorkflowClient } from 'react-native-workflow/expo';
+import { ExpoWorkflowClient } from 'endura/adapters/expo';
 import { openDatabaseAsync } from 'expo-sqlite';
 
 const client = await ExpoWorkflowClient.create({
@@ -1241,7 +1239,7 @@ All data is stored relationally with proper indexes for efficient queries.
 For unit tests and development, use the in-memory storage adapter:
 
 ```typescript
-import { WorkflowEngine, InMemoryStorage } from 'react-native-workflow';
+import { WorkflowEngine, InMemoryStorage } from 'endura';
 
 const storage = new InMemoryStorage();
 const engine = await WorkflowEngine.create({
@@ -1314,7 +1312,7 @@ iOS and Android limit background execution to approximately 30 seconds. The engi
 // background.ts
 import * as TaskManager from 'expo-task-manager';
 import * as BackgroundFetch from 'expo-background-fetch';
-import { ExpoWorkflowClient } from 'react-native-workflow/expo';
+import { ExpoWorkflowClient } from 'endura/adapters/expo';
 import { openDatabaseAsync } from 'expo-sqlite';
 import { photoWorkflow, driverStatusSyncWorkflow } from './workflows';
 
@@ -1382,8 +1380,8 @@ import {
   useExecutionStats,
   usePendingActivityCount,
   useDeadLetters
-} from 'react-native-workflow/expo';
-import { ExpoWorkflowClient } from 'react-native-workflow/expo';
+} from 'endura/adapters/expo';
+import { ExpoWorkflowClient } from 'endura/adapters/expo';
 
 // You need access to the engine/client instance
 const client = await ExpoWorkflowClient.create({ /* ... */ });
@@ -1443,8 +1441,8 @@ function FailureAlerts({ engine }) {
 ### Workflow Progress Component
 
 ```tsx
-import { useExecution } from 'react-native-workflow/expo';
-import { WorkflowEngine } from 'react-native-workflow';
+import { useExecution } from 'endura/adapters/expo';
+import { WorkflowEngine } from 'endura';
 
 function WorkflowProgress({ runId, engine }: { runId: string; engine: WorkflowEngine }) {
   const execution = useExecution(engine, runId);
@@ -1630,7 +1628,7 @@ One file per activity, bundling the execute function with its options:
 
 ```typescript
 // workflows/photo/uploadPhoto.ts
-import { defineActivity, conditions } from 'react-native-workflow';
+import { defineActivity, conditions } from 'endura';
 
 export const uploadPhoto = defineActivity({
   name: 'uploadPhoto',
@@ -1665,7 +1663,7 @@ export { notifyServer } from './notifyServer';
 
 ```typescript
 // workflows/photo/workflow.ts
-import { defineWorkflow } from 'react-native-workflow';
+import { defineWorkflow } from 'endura';
 import { capturePhoto, uploadPhoto, notifyServer } from './activities';
 
 export const photoWorkflow = defineWorkflow({
@@ -1853,7 +1851,7 @@ React hooks are tested using `@testing-library/react-hooks`:
 
 ```typescript
 import { renderHook, waitFor } from '@testing-library/react-hooks';
-import { useExecution } from 'react-native-workflow/expo';
+import { useExecution } from 'endura/adapters/expo';
 
 describe('useExecution', () => {
   it('should return execution data', async () => {
