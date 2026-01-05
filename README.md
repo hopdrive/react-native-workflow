@@ -1943,51 +1943,35 @@ graph TD
     class Adapter,SQLite,Mem storage;
 ```
 
-### System Layers
+### Layer Responsibilities
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│  APPLICATION LAYER                                              │
-│  Your app code: UI, business logic                              │
-│                                                                 │
-│  engine.start(photoWorkflow, { input: { moveId: 123 } })        │
-└─────────────────────────────────────────────────────────────────┘
-                            │
-                            ▼
-┌─────────────────────────────────────────────────────────────────┐
-│  WORKFLOW ENGINE                                                │
-│  Orchestrates workflow execution                                │
-│                                                                 │
-│  • Workflow registration and lookup                             │
-│  • WorkflowExecution lifecycle management                       │
-│  • Activity sequencing and state accumulation                   │
-│  • Uniqueness constraint enforcement                            │
-│  • Cancellation coordination                                    │
-└─────────────────────────────────────────────────────────────────┘
-                            │
-                            ▼
-┌─────────────────────────────────────────────────────────────────┐
-│  ACTIVITY EXECUTOR                                              │
-│  Manages activity execution                                     │
-│                                                                 │
-│  • Priority ordering                                            │
-│  • Retry logic and backoff                                      │
-│  • Concurrency control (async)                                  │
-│  • Precondition checking (runWhen)                              │
-│  • Timeout enforcement                                          │
-└─────────────────────────────────────────────────────────────────┘
-                            │
-                            ▼
-┌─────────────────────────────────────────────────────────────────┐
-│  STORAGE LAYER                                                  │
-│  Persistent state (pluggable backend)                           │
-│                                                                 │
-│  • WorkflowExecution records                                    │
-│  • ActivityTask records                                         │
-│  • Dead letter records                                          │
-│  • Uniqueness index                                             │
-└─────────────────────────────────────────────────────────────────┘
-```
+The architecture consists of four main layers, each with specific responsibilities:
+
+**Application Layer**
+- Your app code: UI, business logic
+- Workflow definitions and activity implementations
+- React hooks for observing execution state
+- Example: `engine.start(photoWorkflow, { input: { moveId: 123 } })`
+
+**Workflow Engine**
+- Workflow registration and lookup
+- WorkflowExecution lifecycle management
+- Activity sequencing and state accumulation
+- Uniqueness constraint enforcement
+- Cancellation coordination
+
+**Activity Executor**
+- Priority ordering
+- Retry logic and backoff
+- Concurrency control (async)
+- Precondition checking (runWhen)
+- Timeout enforcement
+
+**Storage Layer**
+- WorkflowExecution records
+- ActivityTask records
+- Dead letter records
+- Uniqueness index
 
 ---
 
