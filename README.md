@@ -1,4 +1,4 @@
-![React Native Workflow Engine](./logo.png)
+![React Native Workflow Engine](./assets/logo.png)
 
 # React Native Workflow Engine
 
@@ -843,6 +843,8 @@ defineActivity({
 
 Activities receive accumulated state and return additions to it. This is how data flows through a workflow.
 
+![State Threading Model](./assets/State%20Threading%20Model.svg)
+
 ### How State Flows
 
 ```typescript
@@ -901,6 +903,8 @@ execute: async (ctx) => {
 ## Execution Semantics
 
 ### Activity Task Lifecycle
+
+![Activity Lifecycle State Machine](./assets/Activity%20Lifecycle%20State%20Machine.svg)
 
 ```
                     ┌──────────────────────────────────────────┐
@@ -1250,6 +1254,8 @@ const engine = await WorkflowEngine.create({
 ---
 
 ## Background Processing
+
+![Background Processing & Persistence](./assets/Background%20Processing%20%26%20Persistence.svg)
 
 ### Integration with OS Background Systems
 
@@ -1842,6 +1848,8 @@ describe.each([
 ---
 
 ## Architecture
+
+![High-Level System Architecture](./assets/High-Level%20System%20Architecture.svg)
 
 ### System Layers
 
